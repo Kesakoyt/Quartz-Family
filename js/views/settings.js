@@ -302,10 +302,10 @@ export function mountSettings(root) {
     if (standalone) {
       installHint = 'Quartz Family est ouverte comme une application autonome.';
     } else if (installable) {
-      installHint = 'Installez l’application pour un lancement plus rapide et un accès hors ligne.';
+      installHint = "Installez l'application pour un lancement plus rapide et un accès hors ligne.";
     } else {
       installHint =
-        'Utilisez le menu du navigateur → « Installer Quartz Family » (Chrome, Edge) ou « Sur l’écran d’accueil » (Safari).';
+        "Utilisez le menu du navigateur → « Installer Quartz Family » (Chrome, Edge) ou « Sur l'écran d'accueil » (Safari).";
     }
 
     return el(
@@ -342,27 +342,36 @@ export function mountSettings(root) {
         ),
         installRow
       ),
+      el('p', {
+        class: 'settings-row-hint',
+        text: "L'interface et les icônes sont mises en cache par le service worker.",
+      }),
       el(
         'div',
         { class: 'settings-row' },
         el(
           'div',
           {},
-          el('div', { class: 'settings-row-label', text: 'Mode hors ligne' }),
+          el('div', { class: 'settings-row-label', text: 'Politique de confidentialité' }),
           el('div', {
             class: 'settings-row-hint',
-            text: "L'interface et les icônes sont mises en cache par le service worker.",
+            text: "Consultez les informations sur le traitement des données dans l'application.",
           })
         ),
         el(
-          'span',
-          { class: 'badge ' + (offlineReady ? 'badge--success' : '') },
-          icon(offlineReady ? 'checkmark' : 'cloud', 13),
-          el('span', { text: offlineReady ? 'Prêt' : 'En attente' })
+          'button',
+          {
+            class: 'btn btn-secondary btn-sm',
+            type: 'button',
+            dataset: { action: 'privacy-policy' },
+          },
+          icon('document', 15),
+          el('span', { text: 'Afficher' })
         )
       )
     );
   }
+
 
   function buildAboutCard() {
     const repo = repositoryUrl;
@@ -506,20 +515,56 @@ export function mountSettings(root) {
     toast('Tableau de bord réinitialisé.', { type: 'success' });
   }
 
-  async function handleInstall() {
-    const outcome = await promptInstall();
-    if (outcome === 'accepted') {
-      toast('Quartz Family a été installée sur cet appareil.', {
-        type: 'success',
-        title: 'Installation',
-      });
-    } else if (outcome === 'unavailable') {
-      toast(
-        "L'installation n'est pas disponible via ce navigateur. Utilisez le menu du navigateur pour installer l'application.",
-        { type: 'info', title: 'Installation' }
-      );
-    }
-    if (!disposed) render();
+  async function handlePrivacyPolicy() {
+    const body = el(
+      'div',
+      { class: 'privacy-content' },
+      el('p', {
+        class: 'modal-message',
+        text: "Quartz Family utilise uniquement les services nécessaires à son fonctionnement : authentification Google, Cloud Firestore pour la grille de raccourcis et Google Drive via le scope restreint drive.file.",
+      }),
+      el('h3', { class: 'privacy-subtitle', text: "Données traitées" }),
+      el(
+        'ul',
+        { class: 'privacy-list' },
+        el('li', {}, el('strong', { text: 'Compte Google : ' }), 'nom, adresse e-mail, photo de profil (pour l’affichage et la vérification du domaine).'),
+        el('li', {}, el('strong', { text: 'Grille de raccourcis : ' }), 'vos liens personnalisés enregistrés dans users/{uid}/settings/grid.'),
+        el('li', {}, el('strong', { text: 'Google Drive : ' }), 'accès limité aux fichiers créés ou ouverts par l’application (scope drive.file). Aucun jeton n’est stocké de manière persistante.'),
+        el('li', {}, el('strong', { text: 'Préférences locales : ' }), 'thème choisi (localStorage).')
+      ),
+      el('h3', { class: 'privacy-subtitle', text: 'Sécurité' }),
+      el(
+        'ul',
+        { class: 'privacy-list' },
+        el('li', {}, "Accès restreint aux comptes du domaine @kesako.org, contrôlé côté client et par les règles Firestore."),
+        el('li', {}, 'Chaque utilisateur ne peut accéder qu’à ses propres données Firestore.'),
+        el('li', {}, 'L’autorisation Drive est demandée à la demande et limitée au strict nécessaire.'),
+        el('li', {}, 'Aucune donnée n’est revendue ni transmise à des tiers.')
+      ),
+      el('h3', { class: 'privacy-subtitle', text: 'Contact' }),
+      el('p', {
+        class: 'modal-message',
+        text: 'Pour toute question relative à la confidentialité, veuillez contacter les administrateurs de l’organisation.',
+      })
+    );
+
+    const modal = createModal({
+      title: 'Politique de confidentialité',
+      subtitle: APP_NAME + ' · Traitement et protection des données',
+      iconName: 'shield',
+      body,
+      footer: [
+        el('button', {
+          class: 'btn btn-primary',
+          type: 'button',
+          text: 'Fermer',
+          on: { click: () => modal.close('close') },
+        }),
+      ],
+      wide: true,
+    });
+
+    modal.dialog.showModal();
   }
 
   section.addEventListener(
@@ -532,6 +577,7 @@ export function mountSettings(root) {
       if (action === 'signout') handleSignOut(trigger);
       else if (action === 'reset-grid') handleReset();
       else if (action === 'install') handleInstall();
+      else if (action === 'privacy-policy') handlePrivacyPolicy();
     },
     { signal }
   );
