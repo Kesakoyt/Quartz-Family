@@ -1,0 +1,105 @@
+name: Déployer sur GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Construire le site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Générer config.js
+        env:
+          FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          FIREBASE_AUTH_DOMAIN: ${{ vars.FIREBASE_AUTH_DOMAIN }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          ALLOWED_DOMAIN: ${{ vars.ALLOWED_DOMAIN }}
+          REPOSITORY_URL: ${{ vars.REPOSITORY_URL }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+
+          const missing = ['FIREBASE_API_KEY', 'FIREBASE_PROJECT_ID', 'FIREBASE_APP_ID']
+            .filter((key) => !process.env[key]);
+
+          if (missing.length) {
+            console.error(
+              `Variables de dépôt manquantes : ${missing.join(', ')}.\n` +
+              'Ajoutez-les dans Settings → Secrets and variables → Actions → Variables.'
+            );
+            process.exit(1);
+          }
+
+          const projectId = process.env.FIREBASE_PROJECT_ID;
+          const firebaseConfig = {
+            apiKey: process.env.FIREBASE_API_KEY,
+            authDomain: process.env.FIREBASE_AUTH_DOMAIN || `${projectId}.firebaseapp.com`,
+            projectId,
+            storageBucket:
+              process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.firebasestorage.app`,
+            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '',
+            appId: process.env.FIREBASE_APP_ID
+          };
+
+          const config = {
+            firebaseConfig,
+            googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+            allowedDomain: process.env.ALLOWED_DOMAIN || 'kesako.org',
+            repositoryUrl:
+              process.env.REPOSITORY_URL ||
+              `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`
+          };
+
+          if (!config.googleClientId) {
+            console.warn(
+              'GOOGLE_CLIENT_ID est vide : l’application se déploiera, mais Google Drive restera désactivé.'
+            );
+          }
+
+          fs.writeFileSync(
+            'config.js',
+            `/* Généré automatiquement par GitHub Actions — ne pas modifier. */\n` +
+              `window.QUARTZ_CONFIG = ${JSON.stringify(config, null, 2)};\n`
+          );
+          console.log('config.js généré pour le projet', projectId);
+          NODE
+
+      - name: Configurer GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Préparer l'artefact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy:
+    name: Publier
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Déployer
+        id: deployment
+        uses: actions/deploy-pages@v4

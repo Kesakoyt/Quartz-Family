@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark" data-theme-preference="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Quartz Family</title>
+  <meta name="description" content="Quartz Family — le tableau de bord et le Drive de l'organisation, réunis dans une application web installable, rapide et élégante.">
+  <meta name="application-name" content="Quartz Family">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Quartz">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="color-scheme" content="light dark">
+  <meta id="theme-color" name="theme-color" content="#0b0d14">
+
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icons/favicon-96.png" sizes="96x96" type="image/png">
+  <link rel="icon" href="./icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+
+  <link rel="preconnect" href="https://img.icons8.com" crossorigin>
+  <link rel="preconnect" href="https://accounts.google.com" crossorigin>
+  <link rel="stylesheet" href="./css/app.css">
+
+  <script>
+    // Applique le thème avant le premier rendu pour éviter tout scintillement.
+    (function () {
+      try {
+        var preference = localStorage.getItem('quartz.theme') || 'system';
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var resolved = preference === 'system' ? (prefersDark ? 'dark' : 'light') : preference;
+        var root = document.documentElement;
+        root.dataset.theme = resolved;
+        root.dataset.themePreference = preference;
+        root.style.colorScheme = resolved;
+        var meta = document.getElementById('theme-color');
+        if (meta) meta.setAttribute('content', resolved === 'dark' ? '#0b0d14' : '#eef1f8');
+      } catch (error) {
+        /* Mode système par défaut. */
+      }
+    })();
+  </script>
+
+  <script src="./config.js" onerror="window.__QUARTZ_CONFIG_MISSING__ = true"></script>
+  <script type="module" src="./js/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Aller au contenu principal</a>
+
+  <div class="wallpaper" aria-hidden="true">
+    <span class="wallpaper-orb wallpaper-orb--one"></span>
+    <span class="wallpaper-orb wallpaper-orb--two"></span>
+    <span class="wallpaper-orb wallpaper-orb--three"></span>
+    <span class="wallpaper-grain"></span>
+  </div>
+
+  <div id="app" class="app">
+    <div id="boot" class="boot" role="status" aria-live="polite">
+      <div class="boot-inner">
+        <span class="boot-logo">
+          <img src="./icons/logo.svg" width="76" height="76" alt="">
+        </span>
+        <span class="boot-title">Quartz Family</span>
+        <span class="boot-sub"><span class="spinner" aria-hidden="true"></span> Chargement de votre espace…</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="toasts" class="toast-region" role="status" aria-live="polite" aria-atomic="false"></div>
+
+  <noscript>
+    <div class="noscript">
+      <strong>JavaScript est requis.</strong>
+      <p>Activez JavaScript pour utiliser Quartz Family.</p>
+    </div>
+  </noscript>
+</body>
+</html>

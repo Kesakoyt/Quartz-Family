@@ -1,0 +1,25 @@
+# Secrets de configuration — ne jamais committer ce fichier.
+config.js
+
+# Dépendances et outils
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn-error.log*
+
+# Système
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Éditeurs
+.vscode/
+.idea/
+*.suo
+*.sw?
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
