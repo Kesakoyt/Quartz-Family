@@ -1,6 +1,3 @@
-# Secrets de configuration — ne jamais committer ce fichier.
-config.js
-
 # Dépendances et outils
 node_modules/
 package-lock.json
