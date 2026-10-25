@@ -102,32 +102,33 @@ export function getFirestoreDb() {
  */
 export async function signInWithGoogle() {
   console.log('[firebase] signInWithGoogle called');
-  try {
-    // Try popup first (works better on some browsers/pages)
-    const result = await signInWithPopup(auth, provider);
-    console.log('[firebase] signInWithPopup success', result && result.user ? result.user.email : null);
-    return result.user;
-  } catch (error) {
-    console.error('[firebase] signInWithPopup error', error && error.code, error && error.message);
-    const code = error && error.code;
-    // Fall back to redirect for popup-blocked / unsupported environments
-    if (
-      code === 'auth/popup-blocked' ||
-      code === 'auth/operation-not-supported-in-this-environment' ||
-      code === 'auth/web-storage-unsupported' ||
-      code === 'auth/popup-closed-by-user' ||
-      code === 'auth/cancelled-popup-request'
-    ) {
-      console.log('[firebase] falling back to signInWithRedirect');
-      try {
-        await signInWithRedirect(auth, provider);
-        console.log('[firebase] signInWithRedirect initiated');
-        return null;
-      } catch (redirectError) {
-        console.error('[firebase] signInWithRedirect failed', redirectError && redirectError.code);
-        throw redirectError;
+  if (typeof signInWithPopup === 'function') {
+    try {
+      const result = await signInWithPopup(auth, provider);
+      console.log('[firebase] signInWithPopup success', result && result.user ? result.user.email : null);
+      return result.user;
+    } catch (error) {
+      console.error('[firebase] signInWithPopup error', error && error.code, error && error.message);
+      const code = error && error.code;
+      if (
+        code === 'auth/popup-blocked' ||
+        code === 'auth/operation-not-supported-in-this-environment' ||
+        code === 'auth/web-storage-unsupported' ||
+        code === 'auth/popup-closed-by-user' ||
+        code === 'auth/cancelled-popup-request'
+      ) {
+        console.log('[firebase] falling back to signInWithRedirect');
+      } else {
+        throw error;
       }
     }
+  }
+  try {
+    await signInWithRedirect(auth, provider);
+    console.log('[firebase] signInWithRedirect initiated');
+    return null;
+  } catch (error) {
+    console.error('[firebase] signInWithRedirect failed', error && error.code, error && error.message);
     throw error;
   }
 }
