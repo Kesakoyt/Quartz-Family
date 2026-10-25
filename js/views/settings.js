@@ -20,6 +20,7 @@ import {
   avatar,
   toast,
   confirmDialog,
+  createModal,
   documentTitle,
 } from '../ui.js';
 
@@ -269,8 +270,6 @@ export function mountSettings(root) {
   function buildApplicationCard() {
     const standalone = isStandalone();
     const installable = canInstall();
-    const offlineReady =
-      'serviceWorker' in navigator && Boolean(navigator.serviceWorker.controller);
 
     let installRow;
     if (standalone) {
@@ -513,6 +512,22 @@ export function mountSettings(root) {
 
     resetGrid();
     toast('Tableau de bord réinitialisé.', { type: 'success' });
+  }
+
+  async function handleInstall() {
+    const outcome = await promptInstall();
+    if (outcome === 'accepted') {
+      toast('Quartz Family a été installée sur cet appareil.', {
+        type: 'success',
+        title: 'Installation',
+      });
+    } else if (outcome === 'unavailable') {
+      toast(
+        "L'installation n'est pas disponible via ce navigateur. Utilisez le menu du navigateur pour installer l'application.",
+        { type: 'info', title: 'Installation' }
+      );
+    }
+    if (!disposed) render();
   }
 
   async function handlePrivacyPolicy() {

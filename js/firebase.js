@@ -9,7 +9,6 @@ import {
   setPersistence,
   browserLocalPersistence,
   GoogleAuthProvider,
-  signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   signOut,
@@ -80,39 +79,22 @@ export function getFirestoreDb() {
    Authentification
    -------------------------------------------------------------------------- */
 
-function isIos() {
-  if (typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent || '';
-  const iPadOs = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
-  return /iPad|iPhone|iPod/i.test(ua) || iPadOs;
-}
-
 /**
- * Connexion Google. Sur iOS (et en cas de popup bloquée), bascule
- * automatiquement sur la redirection.
- * @returns {Promise<import('../vendor/firebase/firebase-auth.js').User|null>}
+ * Connexion Google.
+ *
+ * Le flux par redirection est utilisé systématiquement : `signInWithPopup`
+ * surveille la fenêtre ouverte via `window.closed`, ce qu'un en-tête
+ * Cross-Origin-Opener-Policy (COOP) bloque (« policy would block the
+ * window.closed call »). La redirection ne dépend pas de cet accès et reste
+ * donc fiable, y compris sur GitHub Pages où aucun en-tête personnalisé ne
+ * peut être défini.
+ *
+ * @returns {Promise<null>} La page est redirigée ; le résultat est traité par
+ *   `resolveRedirectSignIn()` au chargement suivant.
  */
 export async function signInWithGoogle() {
-  if (isIos()) {
-    await signInWithRedirect(auth, provider);
-    return null;
-  }
-
-  try {
-    const result = await signInWithPopup(auth, provider);
-    return result.user;
-  } catch (error) {
-    const code = error && error.code;
-    if (
-      code === 'auth/popup-blocked' ||
-      code === 'auth/operation-not-supported-in-this-environment' ||
-      code === 'auth/web-storage-unsupported'
-    ) {
-      await signInWithRedirect(auth, provider);
-      return null;
-    }
-    throw error;
-  }
+  await signInWithRedirect(auth, provider);
+  return null;
 }
 
 /** Termine une éventuelle redirection de connexion. */
@@ -207,6 +189,12 @@ export function friendlyAuthError(error) {
       return 'Une autre connexion est déjà en cours. Patientez quelques instants.';
     case 'auth/popup-blocked':
       return 'Votre navigateur a bloqué la fenêtre de connexion. Autorisez les fenêtres surgissantes puis réessayez.';
+    case 'auth/redirect-cancelled-by-user':
+      return 'La connexion a été interrompue avant la fin. Réessayez quand vous le souhaitez.';
+    case 'auth/redirect-operation-pending':
+      return 'Une connexion est déjà en cours. Patientez quelques secondes puis réessayez.';
+    case 'auth/web-storage-unsupported':
+      return "Votre navigateur bloque le stockage local nécessaire à la connexion. Autorisez les cookies et le stockage pour ce site, puis réessayez.";
     case 'auth/network-request-failed':
       return 'Impossible de joindre le service de connexion. Vérifiez votre connexion réseau puis réessayez.';
     case 'auth/unauthorized-domain':
