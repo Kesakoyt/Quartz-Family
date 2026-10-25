@@ -42,9 +42,15 @@ export async function initFirebase(firebaseConfig) {
   auth = getAuth(app);
 
   try {
-    await setPersistence(auth, browserLocalPersistence);
-  } catch {
-    /* La persistance par défaut reste acceptable. */
+    await setPersistence(auth, indexedDBLocalPersistence);
+    console.log('[firebase] persistence set to indexedDBLocalPersistence');
+  } catch (e) {
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+      console.log('[firebase] persistence set to browserLocalPersistence');
+    } catch {
+      console.warn('[firebase] persistence fallback failed', e);
+    }
   }
 
   provider = new GoogleAuthProvider();
@@ -128,7 +134,7 @@ export async function signInWithGoogle() {
 export async function resolveRedirectSignIn() {
   try {
     const result = await getRedirectResult(auth);
-    console.log('[firebase] getRedirectResult', result ? result.user.email : null);
+    console.log('[firebase] getRedirectResult', result ? (result.user ? result.user.email : 'no-user') : null);
     return result;
   } catch (error) {
     console.error('[firebase] getRedirectResult error', error && error.code, error && error.message);

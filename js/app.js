@@ -107,6 +107,9 @@ async function boot() {
     const redirectResult = await resolveRedirectSignIn();
     if (redirectResult && redirectResult.user) {
       console.log('[auth] redirect result present', redirectResult.user.email);
+      state.user = redirectResult.user;
+    } else if (redirectResult) {
+      console.log('[auth] redirect result without user');
     }
   } catch (error) {
     console.error('[auth] redirect error', error);
@@ -115,6 +118,9 @@ async function boot() {
 
   watchAuthState((user) => {
     console.log('[auth] state changed', user ? { uid: user.uid, email: user.email } : null);
+    if (user && !state.user) {
+      state.user = user;
+    }
     handleAuthState(user).catch((error) => {
       console.error('Erreur lors du traitement de la connexion', error);
       authInProgress = false;
