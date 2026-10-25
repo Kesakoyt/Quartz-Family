@@ -22,7 +22,35 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v4
 
-      - name: Générer config.js
+      - name: Configurer config.js
+        run: |
+          if [ -f config.js ]; then
+            echo "config.js déjà présent, conservation des valeurs commitées."
+          else
+            echo "config.js manquant, génération depuis les variables..."
+            node << 'NODE'
+            const fs = require('node:fs');
+            const projectId = process.env.FIREBASE_PROJECT_ID || 'quartz-family';
+            const firebaseConfig = {
+              apiKey: process.env.FIREBASE_API_KEY || "AIzaSyDCO2HXhRSiDgBp2zKirr6msJTX4Pt4Vyg",
+              authDomain: process.env.FIREBASE_AUTH_DOMAIN || `${projectId}.firebaseapp.com`,
+              projectId,
+              storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.firebasestorage.app`,
+              messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '846072062010',
+              appId: process.env.FIREBASE_APP_ID || '1:846072062010:web:65dd2643f7bc3470459503'
+            };
+            const config = {
+              firebaseConfig,
+              googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+              allowedDomain: process.env.ALLOWED_DOMAIN || 'kesako.org',
+              repositoryUrl: process.env.REPOSITORY_URL || `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`
+            };
+            fs.writeFileSync(
+              'config.js',
+              `window.QUARTZ_CONFIG = ${JSON.stringify(config, null, 2)};\n`
+            );
+            NODE
+          fi
         env:
           FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
           FIREBASE_AUTH_DOMAIN: ${{ vars.FIREBASE_AUTH_DOMAIN }}
@@ -35,54 +63,6 @@ jobs:
           REPOSITORY_URL: ${{ vars.REPOSITORY_URL }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
-        run: |
-          node - <<'NODE'
-          const fs = require('node:fs');
-
-          const missing = ['FIREBASE_API_KEY', 'FIREBASE_PROJECT_ID', 'FIREBASE_APP_ID']
-            .filter((key) => !process.env[key]);
-
-          if (missing.length) {
-            console.error(
-              `Variables de dépôt manquantes : ${missing.join(', ')}.\n` +
-              'Ajoutez-les dans Settings → Secrets and variables → Actions → Variables.'
-            );
-            process.exit(1);
-          }
-
-          const projectId = process.env.FIREBASE_PROJECT_ID;
-          const firebaseConfig = {
-            apiKey: process.env.FIREBASE_API_KEY,
-            authDomain: process.env.FIREBASE_AUTH_DOMAIN || `${projectId}.firebaseapp.com`,
-            projectId,
-            storageBucket:
-              process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.firebasestorage.app`,
-            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '',
-            appId: process.env.FIREBASE_APP_ID
-          };
-
-          const config = {
-            firebaseConfig,
-            googleClientId: process.env.GOOGLE_CLIENT_ID || '',
-            allowedDomain: process.env.ALLOWED_DOMAIN || 'kesako.org',
-            repositoryUrl:
-              process.env.REPOSITORY_URL ||
-              `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`
-          };
-
-          if (!config.googleClientId) {
-            console.warn(
-              'GOOGLE_CLIENT_ID est vide : l’application se déploiera, mais Google Drive restera désactivé.'
-            );
-          }
-
-          fs.writeFileSync(
-            'config.js',
-            `/* Généré automatiquement par GitHub Actions — ne pas modifier. */\n` +
-              `window.QUARTZ_CONFIG = ${JSON.stringify(config, null, 2)};\n`
-          );
-          console.log('config.js généré pour le projet', projectId);
-          NODE
 
       - name: Configurer GitHub Pages
         uses: actions/configure-pages@v5
