@@ -10,7 +10,6 @@ import {
   browserLocalPersistence,
   indexedDBLocalPersistence,
   GoogleAuthProvider,
-  signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   signOut,
@@ -102,27 +101,6 @@ export function getFirestoreDb() {
  */
 export async function signInWithGoogle() {
   console.log('[firebase] signInWithGoogle called');
-  if (typeof signInWithPopup === 'function') {
-    try {
-      const result = await signInWithPopup(auth, provider);
-      console.log('[firebase] signInWithPopup success', result && result.user ? result.user.email : null);
-      return result.user;
-    } catch (error) {
-      console.error('[firebase] signInWithPopup error', error && error.code, error && error.message);
-      const code = error && error.code;
-      if (
-        code === 'auth/popup-blocked' ||
-        code === 'auth/operation-not-supported-in-this-environment' ||
-        code === 'auth/web-storage-unsupported' ||
-        code === 'auth/popup-closed-by-user' ||
-        code === 'auth/cancelled-popup-request'
-      ) {
-        console.log('[firebase] falling back to signInWithRedirect');
-      } else {
-        throw error;
-      }
-    }
-  }
   try {
     await signInWithRedirect(auth, provider);
     console.log('[firebase] signInWithRedirect initiated');
