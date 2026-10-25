@@ -104,12 +104,17 @@ async function boot() {
   }
 
   try {
-    await resolveRedirectSignIn();
+    const redirectResult = await resolveRedirectSignIn();
+    if (redirectResult && redirectResult.user) {
+      console.log('[auth] redirect result present', redirectResult.user.email);
+    }
   } catch (error) {
+    console.error('[auth] redirect error', error);
     redirectError = friendlyAuthError(error);
   }
 
   watchAuthState((user) => {
+    console.log('[auth] state changed', user ? { uid: user.uid, email: user.email } : null);
     handleAuthState(user).catch((error) => {
       console.error('Erreur lors du traitement de la connexion', error);
       authInProgress = false;
@@ -123,11 +128,13 @@ async function boot() {
 }
 
 async function handleAuthState(user) {
+  console.log('[auth] handleAuthState called', { hasUser: Boolean(user), authInProgress, renderedUid });
   if (authInProgress) return;
 
   if (!user) {
     const error = redirectError;
     redirectError = '';
+    console.log('[auth] no user, rendering login', error ? 'with error' : 'clean');
     teardownSession();
     renderLogin(error ? { error, errorTitle: 'Connexion impossible' } : {});
     return;
@@ -135,6 +142,7 @@ async function handleAuthState(user) {
 
   if (!isAllowedEmail(user.email)) {
     const email = (user.email || 'ce compte').trim();
+    console.warn('[auth] domain rejected', email);
     authInProgress = true;
     teardownSession();
 
@@ -153,6 +161,7 @@ async function handleAuthState(user) {
   }
 
   const isNewSession = renderedUid !== user.uid;
+  console.log('[auth] user accepted', { uid: user.uid, email: user.email, isNewSession, renderedUid });
   state.user = user;
 
   if (!isNewSession) {

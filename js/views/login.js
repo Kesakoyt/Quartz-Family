@@ -124,9 +124,18 @@ export function renderLogin(options = {}) {
     clearError();
     setBusy(true);
     try {
+      console.log('[login] signInWithGoogle clicked, isIos:', (function(){const ua=navigator.userAgent||'';const ipad=navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1;return /iPad|iPhone|iPod/i.test(ua)||ipad;})());
       await signInWithGoogle();
-      // La suite est gérée par onAuthStateChanged dans app.js.
+      console.log('[login] signInWithGoogle returned');
+      // Sur popup réussi, onAuthStateChanged déclenche la suite.
+      // Sur redirection, la page se recharge et resolveRedirectSignIn est appelé au boot.
+      setTimeout(() => {
+        if (googleButton.disabled) {
+          console.log('[login] still busy after timeout, keeping state');
+        }
+      }, 5000);
     } catch (error) {
+      console.error('[login] signInWithGoogle error', error);
       setBusy(false);
       showError(friendlyAuthError(error));
     }

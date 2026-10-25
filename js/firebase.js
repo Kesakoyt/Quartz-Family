@@ -93,15 +93,25 @@ export function getFirestoreDb() {
  *   `resolveRedirectSignIn()` au chargement suivant.
  */
 export async function signInWithGoogle() {
-  await signInWithRedirect(auth, provider);
+  console.log('[firebase] signInWithGoogle called, using redirect');
+  try {
+    await signInWithRedirect(auth, provider);
+    console.log('[firebase] signInWithRedirect initiated');
+  } catch (error) {
+    console.error('[firebase] signInWithRedirect failed', error && error.code, error && error.message);
+    throw error;
+  }
   return null;
 }
 
 /** Termine une éventuelle redirection de connexion. */
 export async function resolveRedirectSignIn() {
   try {
-    return await getRedirectResult(auth);
+    const result = await getRedirectResult(auth);
+    console.log('[firebase] getRedirectResult', result ? result.user.email : null);
+    return result;
   } catch (error) {
+    console.error('[firebase] getRedirectResult error', error && error.code, error && error.message);
     throw error;
   }
 }
