@@ -124,9 +124,9 @@ export function renderLogin(options = {}) {
     clearError();
     setBusy(true);
     try {
-      console.log('[login] signInWithGoogle clicked (redirect)');
+      console.log('[login] signInWithGoogle clicked (popup)');
       await signInWithGoogle();
-      console.log('[login] signInWithGoogle returned (redirect should follow)');
+      console.log('[login] signInWithGoogle returned');
     } catch (error) {
       console.error('[login] signInWithGoogle error', error);
       setBusy(false);
