@@ -30,6 +30,12 @@ function cssEscape(value) {
   return String(value).replace(/["\\]/g, '\\$&');
 }
 
+/** Récupère l'indice de dépannage éventuel porté par une DriveError. */
+function errorHint(error) {
+  if (!error) return '';
+  return error.hint || (error.details && error.details.hint) || '';
+}
+
 export function mountDrive(root) {
   document.title = documentTitle('Drive');
 
@@ -43,6 +49,7 @@ export function mountDrive(root) {
     connected: driveApi.isConnected(),
     connecting: false,
     connectError: '',
+    connectHint: '',
     sessionExpired: false,
     loading: false,
     loaded: false,
@@ -88,10 +95,14 @@ export function mountDrive(root) {
 
   function render() {
     if (disposed) return;
-    // `replaceChildren(null)` insère un nœud texte « null » : on retire les
-    // sections absentes (par ex. l'overlay de dépôt quand Drive n'est pas connecté).
-    const parts = [buildHeader(), buildBody(), buildDropOverlay()];
-    section.replaceChildren(...parts.filter(Boolean));
+    // On vide explicitement pour ne jamais passer `null` à `replaceChildren`
+    // (qui l'insérerait comme nœud texte « null »).
+    section.replaceChildren();
+    section.append(buildHeader(), buildBody());
+
+    const overlay = buildDropOverlay();
+    if (overlay) section.append(overlay);
+
     section.classList.remove('is-dragging');
     dragDepth = 0;
   }
@@ -219,19 +230,15 @@ export function mountDrive(root) {
     }
 
     if (view.connectError) {
-      main.append(
-        el(
-          'div',
-          { class: 'notice notice--danger', style: { marginTop: '12px' } },
-          icon('error', 20),
-          el(
-            'div',
-            {},
-            el('strong', { text: 'Connexion impossible' }),
-            el('div', { text: view.connectError })
-          )
-        )
-      );
+      const notice = buildNotice({
+        type: 'danger',
+        iconName: 'error',
+        title: 'Connexion impossible',
+        message: view.connectError,
+        hint: view.connectHint,
+      });
+      notice.style.marginTop = '12px';
+      main.append(notice);
     }
 
     const connectButton = el(
@@ -290,6 +297,7 @@ export function mountDrive(root) {
           iconName: 'error',
           title: 'Impossible de charger ce dossier',
           message: view.loadError.message || 'Une erreur inattendue est survenue.',
+          hint: errorHint(view.loadError),
           actionLabel: 'Réessayer',
           action: 'retry',
         })
@@ -333,17 +341,32 @@ export function mountDrive(root) {
     return panel;
   }
 
-  function buildNotice({ type, iconName, title, message, actionLabel, action }) {
+  function buildNotice({ type, iconName, title, message, hint, actionLabel, action }) {
+    const content = el(
+      'div',
+      { style: { minWidth: '0' } },
+      el('strong', { text: title }),
+      el('div', { text: message })
+    );
+
+    if (hint) {
+      content.append(
+        el('div', {
+          class: 'notice-hint',
+          style: { marginTop: '6px', fontSize: '11.5px', lineHeight: '1.45' },
+          text: hint,
+        })
+      );
+    }
+
     const node = el(
       'div',
-      { class: 'notice' + (type ? ' notice--' + type : ''), role: 'status' },
+      {
+        class: 'notice' + (type ? ' notice--' + type : ''),
+        role: type === 'danger' ? 'alert' : 'status',
+      },
       icon(iconName, 20, { fallback: 'info' }),
-      el(
-        'div',
-        { style: { minWidth: '0' } },
-        el('strong', { text: title }),
-        el('div', { text: message })
-      )
+      content
     );
 
     if (actionLabel && action) {
@@ -738,7 +761,11 @@ export function mountDrive(root) {
   function renderFiles() {
     const surface = section.querySelector('[data-ref="file-surface"]');
     if (!surface) return;
-    surface.replaceChildren(buildFileContent());
+
+    surface.replaceChildren();
+    const content = buildFileContent();
+    if (content) surface.append(content);
+
     surface.setAttribute('aria-busy', String(view.loading));
     updateMeta();
   }
@@ -862,12 +889,13 @@ export function mountDrive(root) {
 
     view.connecting = true;
     view.connectError = '';
+    view.connectHint = '';
     render();
 
     try {
       await driveApi.connect();
       view.connecting = false;
-      view.connected = true;
+      view.connected = driveApi.isConnected();
       view.sessionExpired = false;
       view.loaded = false;
       view.items = [];
@@ -876,7 +904,9 @@ export function mountDrive(root) {
       await loadFiles();
     } catch (error) {
       view.connecting = false;
-      view.connectError = error && error.message ? error.message : 'La connexion à Google Drive a échoué.';
+      view.connectError =
+        error && error.message ? error.message : 'La connexion à Google Drive a échoué.';
+      view.connectHint = errorHint(error);
       view.connected = driveApi.isConnected();
       render();
     }
@@ -917,9 +947,14 @@ export function mountDrive(root) {
       });
       return;
     }
-    toast(error.message || "L'opération a échoué.", {
+    const message = error.message || "L'opération a échoué.";
+    const hint = errorHint(error);
+    if (hint) console.warn('[drive]', hint);
+
+    toast(hint ? `${message} ${hint}` : message, {
       type: 'error',
       title: 'Google Drive',
+      duration: hint ? 9000 : undefined,
     });
   }
 

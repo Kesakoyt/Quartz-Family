@@ -3,6 +3,9 @@
  *
  * OAuth 2.0 via Google Identity Services (token en mémoire uniquement).
  * Scope minimal : `drive.file` (fichiers créés ou ouverts par l'application).
+ *
+ * Aucune clé API n'est utilisée : chaque appel à l'API Drive est authentifié
+ * exclusivement par le jeton OAuth (`Authorization: Bearer <token>`).
  */
 
 import { config } from './store.js';
@@ -19,16 +22,46 @@ const RESUMABLE_CHUNK = 8 * 1024 * 1024;
 const LIST_FIELDS =
   'id,name,mimeType,size,modifiedTime,createdTime,webViewLink,iconLink,parents,shortcutDetails';
 
+/**
+ * Indices de dépannage associés aux erreurs OAuth / API. Ils sont affichés
+ * dans la vue Drive sous le message d'erreur pour guider la configuration
+ * dans Google Cloud Console.
+ */
+const AUTH_HINTS = {
+  origin_mismatch:
+    "Ajoutez l'origine exacte du site (protocole, domaine et port) dans « Authorized JavaScript origins » du client OAuth, puis rechargez la page.",
+  access_denied:
+    "Vérifiez l'écran de consentement OAuth : ajoutez votre compte aux utilisateurs de test (mode Test) ou publiez l'application.",
+  invalid_client:
+    "Vérifiez `googleClientId` dans config.js : il doit correspondre à un client OAuth 2.0 de type « Application Web » existant.",
+  interaction_required:
+    "Autorisez les fenêtres surgissantes et les cookies pour ce site, puis relancez la connexion.",
+  popup_closed:
+    "La fenêtre de consentement a été fermée. Relancez la connexion et allez jusqu'au bout de l'autorisation.",
+  popup_failed_to_open:
+    "Autorisez les fenêtres surgissantes pour ce site, puis réessayez.",
+  popup:
+    "Autorisez les fenêtres surgissantes pour ce site, puis réessayez.",
+  popup_blocked:
+    "Autorisez les fenêtres surgissantes pour ce site, puis réessayez.",
+};
+
 let token = null;
 let expiresAt = 0;
 let gisPromise = null;
 
 export class DriveError extends Error {
+  /**
+   * @param {string} code
+   * @param {string} message
+   * @param {{ reauth?: boolean, hint?: string, reason?: string }} [details]
+   */
   constructor(code, message, details = {}) {
     super(message);
     this.name = 'DriveError';
     this.code = code;
     this.details = details;
+    this.hint = details && details.hint ? details.hint : '';
   }
 }
 
@@ -118,63 +151,107 @@ export async function connect() {
         callback: (response) => {
           if (!response || response.error) {
             const code = (response && response.error) || 'unknown';
-            finish(reject, new DriveError(code, authMessageForCode(code)));
+            finish(reject, authErrorForCode(code, response && response.error_description));
             return;
           }
 
-          const granted = String(response.scope || '');
-          if (granted && !granted.split(/\s+/).includes(DRIVE_SCOPE)) {
+          const accessToken = response.access_token;
+          if (!accessToken) {
             finish(
               reject,
               new DriveError(
-                'scope',
-                "L'autorisation Google Drive n'a pas été accordée. Réessayez et cochez l'accès demandé."
+                'auth',
+                "Google n'a pas renvoyé de jeton d'accès. Réessayez la connexion.",
+                {
+                  reauth: true,
+                  hint: "Vérifiez que le scope drive.file est autorisé sur l'écran de consentement OAuth et que le client est de type « Application Web ».",
+                }
               )
             );
             return;
           }
 
-          token = response.access_token;
+          const granted = String(response.scope || '').split(/\s+/).filter(Boolean);
+          if (granted.length && !granted.includes(DRIVE_SCOPE)) {
+            finish(
+              reject,
+              new DriveError(
+                'scope',
+                "L'autorisation Google Drive n'a pas été accordée. Réessayez et cochez l'accès demandé.",
+                {
+                  hint: "Le scope https://www.googleapis.com/auth/drive.file doit être ajouté à l'écran de consentement OAuth du projet.",
+                }
+              )
+            );
+            return;
+          }
+
+          token = String(accessToken);
           const lifetime = Number(response.expires_in) || 3600;
           expiresAt = Date.now() + lifetime * 1000 - EXPIRY_MARGIN;
           finish(resolve, token);
         },
         error_callback: (error) => {
-          const code = (error && error.type) || 'popup';
-          finish(reject, new DriveError(code, authMessageForCode(code)));
+          const code = (error && (error.type || error.code)) || 'popup';
+          finish(reject, authErrorForCode(code, error && error.message));
         },
       });
     } catch (error) {
-      finish(reject, new DriveError('gis', "Impossible d'initialiser la connexion Google."));
+      finish(
+        reject,
+        new DriveError('gis', "Impossible d'initialiser la connexion Google.", {
+          hint: "Vérifiez que Google Identity Services n'est pas bloqué par une extension ou une politique réseau, puis rechargez la page.",
+        })
+      );
       return;
     }
 
     try {
       client.requestAccessToken({ prompt: '' });
     } catch (error) {
-      finish(reject, new DriveError('popup', "La fenêtre de connexion Google n'a pas pu s'ouvrir."));
+      finish(reject, authErrorForCode('popup', error && error.message));
     }
   });
 }
 
-function authMessageForCode(code) {
-  switch (code) {
+function authErrorForCode(code, detail = '') {
+  const normalized = String(code || 'unknown');
+  const hint = AUTH_HINTS[normalized] || '';
+  let message;
+
+  switch (normalized) {
     case 'popup_closed':
-      return 'La fenêtre de connexion Google a été fermée.';
+      message = 'La fenêtre de connexion Google a été fermée.';
+      break;
     case 'popup_failed_to_open':
     case 'popup':
-      return "La fenêtre de connexion Google n'a pas pu s'ouvrir. Autorisez les fenêtres surgissantes puis réessayez.";
+    case 'popup_blocked':
+      message =
+        "La fenêtre de connexion Google n'a pas pu s'ouvrir. Autorisez les fenêtres surgissantes puis réessayez.";
+      break;
     case 'access_denied':
-      return "Vous avez refusé l'accès à Google Drive. Quartz Family ne peut pas fonctionner sans cette autorisation.";
+      message =
+        "Vous avez refusé l'accès à Google Drive. Quartz Family ne peut pas fonctionner sans cette autorisation.";
+      break;
     case 'interaction_required':
-      return 'Une interaction est requise avec votre compte Google. Cliquez à nouveau sur « Se connecter ».';
+      message =
+        'Une interaction est requise avec votre compte Google. Cliquez à nouveau sur « Se connecter à Google Drive ».';
+      break;
     case 'invalid_client':
-      return "L'ID client OAuth est invalide. Vérifiez `googleClientId` et les origines autorisées dans Google Cloud Console.";
+      message =
+        "L'ID client OAuth est invalide. Vérifiez `googleClientId` et les origines autorisées dans Google Cloud Console.";
+      break;
     case 'origin_mismatch':
-      return "L'origine de ce site n'est pas autorisée pour cet ID client OAuth. Ajoutez-la dans Google Cloud Console.";
+      message =
+        "L'origine de ce site n'est pas autorisée pour cet ID client OAuth. Ajoutez-la dans Google Cloud Console.";
+      break;
     default:
-      return "La connexion à Google Drive a échoué. Réessayez dans un instant.";
+      message = detail
+        ? `La connexion à Google Drive a échoué (${detail}).`
+        : 'La connexion à Google Drive a échoué. Réessayez dans un instant.';
   }
+
+  return new DriveError(normalized, message, { hint });
 }
 
 /* --------------------------------------------------------------------------
@@ -186,7 +263,10 @@ function requireToken() {
     throw new DriveError(
       'auth',
       'Votre session Google Drive a expiré. Reconnectez-vous pour continuer.',
-      { reauth: true }
+      {
+        reauth: true,
+        hint: 'Le jeton OAuth est absent, expiré ou révoqué. Reconnectez-vous pour en obtenir un nouveau.',
+      }
     );
   }
   return token;
@@ -195,13 +275,21 @@ function requireToken() {
 async function parseErrorResponse(response) {
   let message = '';
   let reason = '';
+  let apiKeyBlocked = false;
+
   try {
     const data = await response.json();
-    message = data && data.error && data.error.message ? data.error.message : '';
+    const error = (data && data.error) || {};
+    message = error.message || '';
+    const errors = Array.isArray(error.errors) ? error.errors : [];
+    const details = Array.isArray(error.details) ? error.details : [];
     reason =
-      data && data.error && Array.isArray(data.error.errors) && data.error.errors[0]
-        ? data.error.errors[0].reason
-        : '';
+      (errors[0] && errors[0].reason) ||
+      (details.find((item) => item && item.reason) || {}).reason ||
+      '';
+    const reasons = [reason, ...details.map((item) => (item && item.reason) || '')];
+    apiKeyBlocked =
+      reasons.includes('API_KEY_HTTP_REFERRER_BLOCKED') || /api key/i.test(message);
   } catch {
     /* corps vide ou non JSON */
   }
@@ -210,11 +298,44 @@ async function parseErrorResponse(response) {
     clearDriveToken();
     return new DriveError('auth', 'Votre session Google Drive a expiré. Reconnectez-vous.', {
       reauth: true,
+      hint: "Le jeton OAuth est absent, expiré ou révoqué. Reconnectez-vous pour en obtenir un nouveau.",
     });
   }
+
+  if (apiKeyBlocked) {
+    return new DriveError(
+      'forbidden',
+      "Google Drive a refusé la requête à cause d'une clé API restreinte.",
+      {
+        reason: 'API_KEY_HTTP_REFERRER_BLOCKED',
+        hint: "L'intégration Drive utilise uniquement un jeton OAuth : ne passez jamais de paramètre `key` aux endpoints Drive et vérifiez les restrictions de clé dans Google Cloud Console.",
+      }
+    );
+  }
+
   if (response.status === 403 && reason === 'storageQuotaExceeded') {
     return new DriveError('quota', "L'espace de stockage de votre Drive est plein.");
   }
+
+  if (
+    response.status === 403 &&
+    (reason === 'insufficientFilePermissions' ||
+      reason === 'insufficientPermissions' ||
+      reason === 'appNotAuthorizedToFile')
+  ) {
+    return new DriveError('forbidden', "Google Drive a refusé l'accès à cet élément.", {
+      reason,
+      hint: "Le scope drive.file limite l'accès aux fichiers créés ou ouverts par Quartz Family. Importez le fichier depuis l'application ou vérifiez ses autorisations dans Google Drive.",
+    });
+  }
+
+  if (response.status === 403 && reason === 'accessNotConfigured') {
+    return new DriveError('forbidden', "Google Drive API n'est pas activée pour ce projet.", {
+      reason,
+      hint: 'Activez « Google Drive API » dans Google Cloud Console pour le projet qui contient `googleClientId`.',
+    });
+  }
+
   if (response.status === 403) {
     return new DriveError(
       'forbidden',
@@ -239,6 +360,14 @@ async function parseErrorResponse(response) {
   );
 }
 
+/**
+ * Construit une URL Google Drive API v3.
+ * OAuth uniquement : ne jamais ajouter de paramètre `key` (clé API).
+ */
+function driveUrl(base, path) {
+  return `${base}${path}`;
+}
+
 async function apiFetch(path, options = {}) {
   const accessToken = requireToken();
   const headers = new Headers(options.headers || {});
@@ -252,7 +381,7 @@ async function apiFetch(path, options = {}) {
 
   let response;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetch(driveUrl(API_BASE, path), {
       method: options.method || 'GET',
       headers,
       body,
@@ -355,7 +484,10 @@ export async function downloadFile(file) {
   let response;
   try {
     response = await fetch(
-      `${API_BASE}/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=false`,
+      driveUrl(
+        API_BASE,
+        `/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=false`
+      ),
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
   } catch {
@@ -390,11 +522,8 @@ export async function downloadFile(file) {
  */
 export async function uploadFile(file, parentId = 'root', onProgress = () => {}) {
   if (!file) throw new DriveError('invalid', 'Aucun fichier à importer.');
-  if (!isConnected()) {
-    throw new DriveError('auth', 'Reconnectez-vous à Google Drive avant d’importer.', {
-      reauth: true,
-    });
-  }
+  // Lève une DriveError('auth') si le jeton OAuth est absent, expiré ou révoqué.
+  requireToken();
 
   const metadata = {
     name: file.name,
@@ -411,6 +540,8 @@ export async function uploadFile(file, parentId = 'root', onProgress = () => {})
 }
 
 function multipartUpload(file, metadata, onProgress) {
+  const accessToken = requireToken();
+
   return new Promise((resolve, reject) => {
     const boundary = '-------QuartzFamily' + Date.now().toString(16) + Math.random().toString(16).slice(2);
     const contentType = file.type || 'application/octet-stream';
@@ -427,9 +558,12 @@ function multipartUpload(file, metadata, onProgress) {
     const xhr = new XMLHttpRequest();
     xhr.open(
       'POST',
-      `${UPLOAD_BASE}/files?uploadType=multipart&fields=${encodeURIComponent(LIST_FIELDS)}`
+      driveUrl(
+        UPLOAD_BASE,
+        `/files?uploadType=multipart&fields=${encodeURIComponent(LIST_FIELDS)}`
+      )
     );
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
     xhr.setRequestHeader('Content-Type', `multipart/related; boundary=${boundary}`);
 
     xhr.upload.addEventListener('progress', (event) => {
@@ -495,7 +629,10 @@ async function resumableUpload(file, metadata, onProgress) {
   let initResponse;
   try {
     initResponse = await fetch(
-      `${UPLOAD_BASE}/files?uploadType=resumable&fields=${encodeURIComponent(LIST_FIELDS)}`,
+      driveUrl(
+        UPLOAD_BASE,
+        `/files?uploadType=resumable&fields=${encodeURIComponent(LIST_FIELDS)}`
+      ),
       {
         method: 'POST',
         headers: {
