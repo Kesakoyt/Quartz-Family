@@ -1,14 +1,19 @@
 /**
  * Quartz Family — client Google Drive API v3.
  *
- * OAuth 2.0 via Google Identity Services (token en mémoire uniquement).
+ * OAuth 2.0, jeton conservé en mémoire uniquement.
  * Scope minimal : `drive.file` (fichiers créés ou ouverts par l'application).
+ *
+ * Le jeton est d'abord demandé à la session Firebase (popup relayée par
+ * `authDomain`, fiable dans les environnements où la popup Google Identity
+ * Services directe reste bloquée). Google Identity Services sert de repli.
  *
  * Aucune clé API n'est utilisée : chaque appel à l'API Drive est authentifié
  * exclusivement par le jeton OAuth (`Authorization: Bearer <token>`).
  */
 
 import { config } from './store.js';
+import { getFirebaseAuth, requestGoogleAccessToken } from './firebase.js';
 
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
@@ -16,6 +21,9 @@ const API_BASE = 'https://www.googleapis.com/drive/v3';
 const UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3';
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
 const EXPIRY_MARGIN = 60 * 1000;
+const CONNECT_TIMEOUT = 2 * 60 * 1000;
+// Les jetons OAuth Google émis via Firebase expirent au bout d'une heure.
+const FIREBASE_TOKEN_LIFETIME = 55 * 60 * 1000;
 const MAX_SIMPLE_UPLOAD = 5 * 1024 * 1024;
 const RESUMABLE_CHUNK = 8 * 1024 * 1024;
 
@@ -44,6 +52,18 @@ const AUTH_HINTS = {
     "Autorisez les fenêtres surgissantes pour ce site, puis réessayez.",
   popup_blocked:
     "Autorisez les fenêtres surgissantes pour ce site, puis réessayez.",
+  account_mismatch:
+    "Le compte Google choisi ne correspond pas à votre session Quartz Family. Sélectionnez le même compte que celui utilisé pour vous connecter.",
+  unauthorized_domain:
+    "Ce domaine n'est pas autorisé dans Firebase Authentication. Ajoutez l'adresse du site dans les domaines autorisés de Firebase.",
+  no_current_user:
+    "Reconnectez-vous à Quartz Family avant de connecter Google Drive.",
+  no_access_token:
+    "Google n'a pas fourni de jeton d'accès. Vérifiez que le scope drive.file est autorisé dans l'écran de consentement OAuth du projet Firebase, puis réessayez.",
+  scope:
+    "Cochez l'accès à Google Drive lors de la demande d'autorisation. Le scope drive.file doit être accordé pour utiliser cette page.",
+  timeout:
+    "La fenêtre Google n'a pas renvoyé de jeton d'accès. Fermez-la si elle est encore ouverte, autorisez les fenêtres surgissantes puis réessayez.",
 };
 
 let token = null;
@@ -66,6 +86,13 @@ export class DriveError extends Error {
 }
 
 export function isDriveConfigured() {
+  // La session Firebase suffit : elle fournit un jeton OAuth avec drive.file.
+  // `googleClientId` n'est nécessaire que pour le repli Google Identity Services.
+  return Boolean(getFirebaseAuth()) || isGisConfigured();
+}
+
+/** Vrai si le repli Google Identity Services est configuré. */
+export function isGisConfigured() {
   return Boolean(
     config && typeof config.googleClientId === 'string' && config.googleClientId.trim().length > 20
   );
@@ -78,6 +105,18 @@ export function isConnected() {
 export function clearDriveToken() {
   token = null;
   expiresAt = 0;
+}
+
+/**
+ * Mémorise un jeton OAuth et sa durée de vie.
+ * @param {string} accessToken
+ * @param {number} lifetimeMs
+ * @returns {string}
+ */
+function storeToken(accessToken, lifetimeMs) {
+  token = String(accessToken);
+  expiresAt = Date.now() + Math.max(0, lifetimeMs) - EXPIRY_MARGIN;
+  return token;
 }
 
 /* --------------------------------------------------------------------------
@@ -121,27 +160,216 @@ export function preloadGis() {
 }
 
 /**
- * Demande un jeton d'accès Google Drive (fenêtre de consentement).
+ * Demande un jeton d'accès Google Drive.
+ *
+ * 1. Jeton OAuth de la session Firebase : la popup Firebase passe par
+ *    `authDomain` et fonctionne là où la popup Google Identity Services
+ *    directe reste bloquée.
+ * 2. Repli Google Identity Services si Firebase ne peut pas fournir de jeton
+ *    (session absente, scope non configuré, etc.).
+ *
  * @returns {Promise<string>} jeton d'accès
  */
 export async function connect() {
+  if (isConnected()) return token;
+
   if (!isDriveConfigured()) {
     throw new DriveError(
       'not-configured',
-      "L'accès à Google Drive n'est pas configuré : renseignez `googleClientId` dans `config.js`."
+      "L'accès à Google Drive n'est pas configuré : connectez-vous avec Firebase ou renseignez `googleClientId` dans `config.js`."
     );
   }
 
+  const failures = [];
+  const auth = getFirebaseAuth();
+
+  if (auth && auth.currentUser) {
+    try {
+      const { accessToken } = await withTimeout(
+        requestGoogleAccessToken([DRIVE_SCOPE]),
+        CONNECT_TIMEOUT,
+        () =>
+          new DriveError(
+            'timeout',
+            "La fenêtre Google n'a pas renvoyé de jeton d'accès. La connexion a été interrompue.",
+            { hint: AUTH_HINTS.timeout }
+          )
+      );
+      return storeToken(accessToken, FIREBASE_TOKEN_LIFETIME);
+    } catch (error) {
+      console.warn(
+        '[drive] jeton Firebase indisponible',
+        error && error.code,
+        error && error.message
+      );
+      const driveError = firebaseErrorToDriveError(error);
+      // Un refus explicite de l'utilisateur ne doit pas déclencher une
+      // seconde fenêtre de consentement.
+      if (!canFallbackToGis(driveError)) throw driveError;
+      failures.push(driveError);
+    }
+  }
+
+  if (isGisConfigured()) {
+    try {
+      return await connectWithGis();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    const primary = failures[0];
+    const secondary = failures[failures.length - 1];
+    throw new DriveError(primary.code, primary.message, {
+      reauth: Boolean(primary.details && primary.details.reauth),
+      hint: [primary.hint, secondary && secondary.hint].filter(Boolean).join(' '),
+    });
+  }
+
+  if (!auth || !auth.currentUser) {
+    throw new DriveError('no_current_user', 'Aucune session Google active.', {
+      hint: AUTH_HINTS.no_current_user,
+    });
+  }
+
+  throw new DriveError(
+    'auth',
+    'La connexion à Google Drive a échoué. Réessayez dans un instant.'
+  );
+}
+
+/**
+ * Rejette la promesse après `ms` millisecondes si elle n'est pas résolue.
+ * La fenêtre OAuth peut rester ouverte sans jamais rappeler son callback
+ * (fermeture par l'utilisateur, extension, blocage du relais) : sans délai,
+ * le bouton « Se connecter » resterait bloqué indéfiniment.
+ */
+function withTimeout(promise, ms, errorFactory) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(errorFactory()), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
+/** Erreurs Firebase pour lesquelles une nouvelle popup GIS serait inutile. */
+function canFallbackToGis(error) {
+  return !['popup_closed', 'popup_blocked', 'account_mismatch'].includes(error && error.code);
+}
+
+/** Convertit une erreur Firebase Auth en DriveError lisible. */
+function firebaseErrorToDriveError(error) {
+  if (error instanceof DriveError) return error;
+
+  const raw = String((error && error.code) || 'unknown');
+  const detail = error && error.message ? error.message : '';
+
+  switch (raw) {
+    case 'auth/popup-closed-by-user':
+    case 'auth/cancelled-popup-request':
+      return new DriveError(
+        'popup_closed',
+        'La fenêtre de connexion Google a été fermée avant la fin.',
+        { hint: AUTH_HINTS.popup_closed }
+      );
+    case 'auth/popup-blocked':
+    case 'auth/operation-not-supported-in-this-environment':
+      return new DriveError(
+        'popup_blocked',
+        "La fenêtre de connexion Google n'a pas pu s'ouvrir.",
+        { hint: AUTH_HINTS.popup_blocked }
+      );
+    case 'auth/user-mismatch':
+      return new DriveError(
+        'account_mismatch',
+        "Le compte Google choisi ne correspond pas à votre session Quartz Family.",
+        { hint: AUTH_HINTS.account_mismatch }
+      );
+    case 'auth/unauthorized-domain':
+      return new DriveError(
+        'unauthorized_domain',
+        "Ce domaine n'est pas autorisé dans Firebase Authentication.",
+        { hint: AUTH_HINTS.unauthorized_domain }
+      );
+    case 'auth/no-current-user':
+      return new DriveError('no_current_user', 'Aucune session Google active.', {
+        hint: AUTH_HINTS.no_current_user,
+      });
+    case 'auth/no-access-token':
+      return new DriveError(
+        'no_access_token',
+        "Google n'a pas renvoyé de jeton d'accès.",
+        { hint: AUTH_HINTS.no_access_token }
+      );
+    case 'auth/requires-recent-login':
+      return new DriveError(
+        'auth',
+        'Votre session Google doit être confirmée à nouveau.',
+        {
+          reauth: true,
+          hint: 'Reconnectez-vous à Quartz Family, puis relancez la connexion à Google Drive.',
+        }
+      );
+    case 'auth/network-request-failed':
+      return new DriveError(
+        'network',
+        'La connexion à Google a échoué (réseau indisponible).',
+        { hint: 'Vérifiez votre connexion Internet, puis réessayez.' }
+      );
+    case 'auth/operation-not-allowed':
+      return new DriveError(
+        'provider_disabled',
+        "La connexion Google n'est pas activée dans Firebase Authentication.",
+        {
+          hint: 'Activez le fournisseur « Google » dans Firebase Authentication → Sign-in method.',
+        }
+      );
+    default:
+      return authErrorForCode(raw.replace(/^auth\//, ''), detail);
+  }
+}
+
+/** Repli : jeton obtenu directement via Google Identity Services. */
+async function connectWithGis() {
   await preloadGis();
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let timer = null;
 
     const finish = (callback, value) => {
       if (settled) return;
       settled = true;
+      if (timer) clearTimeout(timer);
       callback(value);
     };
+
+    // La fenêtre OAuth peut ne jamais rappeler le callback (fermeture par
+    // l'utilisateur, `window.opener` perdu à cause de COOP, extension qui
+    // bloque le relais Google). Sans délai, le bouton resterait bloqué.
+    timer = setTimeout(() => {
+      finish(
+        reject,
+        new DriveError(
+          'timeout',
+          "La fenêtre Google n'a pas renvoyé de jeton d'accès. La connexion a été interrompue.",
+          {
+            hint:
+              'Autorisez les fenêtres surgissantes, rechargez la page puis réessayez. Si le problème persiste, désactivez les bloqueurs de scripts pour ce site.',
+          }
+        )
+      );
+    }, CONNECT_TIMEOUT);
 
     let client;
     try {
@@ -178,18 +406,14 @@ export async function connect() {
               new DriveError(
                 'scope',
                 "L'autorisation Google Drive n'a pas été accordée. Réessayez et cochez l'accès demandé.",
-                {
-                  hint: "Le scope https://www.googleapis.com/auth/drive.file doit être ajouté à l'écran de consentement OAuth du projet.",
-                }
+                { hint: AUTH_HINTS.scope }
               )
             );
             return;
           }
 
-          token = String(accessToken);
           const lifetime = Number(response.expires_in) || 3600;
-          expiresAt = Date.now() + lifetime * 1000 - EXPIRY_MARGIN;
-          finish(resolve, token);
+          finish(resolve, storeToken(accessToken, lifetime * 1000));
         },
         error_callback: (error) => {
           const code = (error && (error.type || error.code)) || 'popup';
@@ -276,6 +500,7 @@ async function parseErrorResponse(response) {
   let message = '';
   let reason = '';
   let apiKeyBlocked = false;
+  let serviceDisabled = false;
 
   try {
     const data = await response.json();
@@ -290,12 +515,29 @@ async function parseErrorResponse(response) {
     const reasons = [reason, ...details.map((item) => (item && item.reason) || '')];
     apiKeyBlocked =
       reasons.includes('API_KEY_HTTP_REFERRER_BLOCKED') || /api key/i.test(message);
+    serviceDisabled =
+      reasons.includes('SERVICE_DISABLED') || reasons.includes('accessNotConfigured');
   } catch {
     /* corps vide ou non JSON */
   }
 
   if (response.status === 401) {
     clearDriveToken();
+
+    const scopeMissing =
+      reason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' ||
+      /ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(message);
+    if (scopeMissing) {
+      return new DriveError(
+        'scope',
+        "Le jeton Google ne donne pas accès à Google Drive (scope drive.file).",
+        {
+          reauth: true,
+          hint: AUTH_HINTS.scope,
+        }
+      );
+    }
+
     return new DriveError('auth', 'Votre session Google Drive a expiré. Reconnectez-vous.', {
       reauth: true,
       hint: "Le jeton OAuth est absent, expiré ou révoqué. Reconnectez-vous pour en obtenir un nouveau.",
@@ -329,10 +571,10 @@ async function parseErrorResponse(response) {
     });
   }
 
-  if (response.status === 403 && reason === 'accessNotConfigured') {
+  if (response.status === 403 && serviceDisabled) {
     return new DriveError('forbidden', "Google Drive API n'est pas activée pour ce projet.", {
-      reason,
-      hint: 'Activez « Google Drive API » dans Google Cloud Console pour le projet qui contient `googleClientId`.',
+      reason: 'SERVICE_DISABLED',
+      hint: 'Activez « Google Drive API » dans le projet Google Cloud associé à la configuration Firebase (`projectId`), puis réessayez après quelques minutes.',
     });
   }
 

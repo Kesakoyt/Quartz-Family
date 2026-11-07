@@ -2,7 +2,8 @@
  * Quartz Family — modèle de configuration.
  *
  * 1. Copiez ce fichier en `config.js` (même dossier).
- * 2. Renseignez `googleClientId` (voir la section « Google Drive » du README).
+ * 2. Renseignez la configuration Firebase (et, éventuellement, `googleClientId`
+ *    pour le repli Google Identity Services du Drive).
  * 3. Ne committez jamais `config.js` : il est ignoré par Git.
  *
  * Ce fichier est chargé en script classique avant l'application : il expose
@@ -19,9 +20,11 @@ const firebaseConfig = {
 };
 
 /**
- * ID client OAuth 2.0 de type « Application Web », créé dans Google Cloud
- * Console pour le projet `quartz-family`. Il sert uniquement à Google
- * Identity Services pour l'accès au Drive (scope `drive.file`).
+ * ID client OAuth 2.0 de type « Application Web » (facultatif).
+ *
+ * Le Drive utilise d'abord la session Google Firebase. Ce client active
+ * uniquement le repli Google Identity Services lorsque Firebase ne peut pas
+ * fournir de jeton. Il doit autoriser le scope `drive.file`.
  *
  * Exemple : "846072062010-abc123.apps.googleusercontent.com"
  */

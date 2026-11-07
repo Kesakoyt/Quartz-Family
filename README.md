@@ -35,7 +35,7 @@ Quartz Family est une **PWA statique** en HTML, CSS et JavaScript natif (modules
 | Interface | HTML5, CSS3, JavaScript ES6 natif — aucun framework |
 | Authentification | Firebase Authentication, fournisseur Google |
 | Données | Cloud Firestore, document `users/{uid}/settings/grid` |
-| Fichiers | Google Drive API v3 via Google Identity Services |
+| Fichiers | Google Drive API v3 via OAuth 2.0 (`drive.file`) |
 | Hors ligne | Service worker + `localStorage` + cache persistant Firestore |
 | Hébergement | GitHub Pages (site statique) |
 | Langue | Français |
@@ -118,7 +118,7 @@ Le champ `hd: 'kesako.org'` est transmis au fournisseur Google pour proposer les
 
 ## Google Drive (OAuth)
 
-L'accès au Drive utilise **Google Identity Services** avec le scope minimal :
+L'accès au Drive utilise un jeton **OAuth 2.0** avec le scope minimal :
 
 ```text
 https://www.googleapis.com/auth/drive.file
@@ -126,21 +126,29 @@ https://www.googleapis.com/auth/drive.file
 
 Ce scope permet uniquement de voir et gérer les fichiers **créés ou ouverts par Quartz Family**. L'application ne peut pas parcourir l'ensemble du Drive de l'utilisateur.
 
-### Créer le client OAuth
+### Jeton OAuth
 
-1. Ouvrez [Google Cloud Console](https://console.cloud.google.com/) et sélectionnez le projet Firebase (`quartz-family`).
+Par défaut, Quartz Family réutilise la session Google **Firebase** : la première fois que vous ouvrez le Drive, une fenêtre demande l'autorisation `drive.file`, puis le jeton reste en mémoire (jamais écrit dans le stockage local). Ce flux passe par `authDomain` et fonctionne même lorsque la fenêtre Google Identity Services directe est bloquée.
+
+Pour que ce mode fonctionne, le projet Firebase (`quartz-family`) doit avoir :
+
+1. **Google Drive API** activée (APIs & Services → Library) ;
+2. le scope `https://www.googleapis.com/auth/drive.file` autorisé sur l'**écran de consentement OAuth** (type « Interne » recommandé pour le Workspace `kesako.org`, sinon « Externe » avec les comptes de test).
+
+### Repli Google Identity Services (optionnel)
+
+`googleClientId` active un second chemin, utilisé si Firebase ne peut pas fournir de jeton. Pour le configurer :
+
+1. Ouvrez [Google Cloud Console](https://console.cloud.google.com/) et sélectionnez le projet qui contient votre client OAuth.
 2. Activez **Google Drive API** (APIs & Services → Library).
-3. Configurez l'**écran de consentement OAuth** :
-   - type « Interne » si tous les utilisateurs appartiennent au Workspace `kesako.org` (recommandé) ;
-   - sinon « Externe » avec le domaine ajouté aux utilisateurs de test.
-4. Créez un identifiant **OAuth client ID** de type **Application Web**.
-5. Dans **Authorized JavaScript origins**, ajoutez :
+3. Créez un identifiant **OAuth client ID** de type **Application Web**.
+4. Dans **Authorized JavaScript origins**, ajoutez :
    - `http://localhost:8080` (ou le port utilisé) ;
    - `https://<votre-compte>.github.io` ;
    - votre domaine personnalisé le cas échéant.
-6. Copiez l'ID client dans `googleClientId`.
+5. Copiez l'ID client dans `googleClientId`.
 
-Sans `googleClientId`, l'application fonctionne normalement, mais la vue Drive affiche un avis « Configuration requise ».
+Sans `googleClientId`, le Drive reste disponible via la session Firebase.
 
 ---
 
@@ -271,8 +279,9 @@ Pour aller plus loin, vous pouvez restreindre l'écran de consentement OAuth au 
 | « Configuration requise » au démarrage | `config.js` absent ou incomplet. Copiez `config.example.js` et renseignez Firebase. |
 | `auth/unauthorized-domain` | Ajoutez le domaine du site dans Firebase Authentication → Authorized domains. |
 | `permission-denied` dans la console | Les règles Firestore ne sont pas déployées ou l'adresse n'est pas `@kesako.org`. |
-| Drive affiche « Configuration requise » | `googleClientId` est vide ou invalide ; vérifiez les origines JavaScript autorisées. |
-| `redirect_uri_mismatch` / origine refusée | Ajoutez l'origine exacte (`https://…`) dans le client OAuth Google. |
+| Drive affiche « Configuration requise » | `config.js` est absent ou Firebase n'est pas initialisé ; `googleClientId` n'est plus obligatoire. |
+| Drive demandé mais refusé (scope) | Autorisez `https://www.googleapis.com/auth/drive.file` sur l'écran de consentement OAuth du projet Firebase, puis reconnectez-vous. |
+| `redirect_uri_mismatch` / origine refusée | Ajoutez l'origine exacte (`https://…`) dans le client OAuth Google (repli `googleClientId`). |
 | Ancienne version affichée | Rechargez avec `Ctrl+F5`, ou acceptez la notification de mise à jour. |
 | L'application ne s'installe pas | Vérifiez HTTPS, `manifest.json`, le service worker et utilisez Chrome/Edge. |
 

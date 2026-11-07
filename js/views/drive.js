@@ -75,7 +75,7 @@ export function mountDrive(root) {
   });
   root.appendChild(section);
 
-  if (configured) {
+  if (configured && driveApi.isGisConfigured()) {
     driveApi.preloadGis().catch(() => {
       /* l'utilisateur verra un message s'il tente de se connecter */
     });
@@ -213,7 +213,7 @@ export function mountDrive(root) {
             {},
             el('strong', { text: 'Configuration requise' }),
             el('div', {
-              text: "Renseignez l'identifiant `googleClientId` dans le fichier config.js, puis rechargez la page.",
+              text: "Connectez-vous à Quartz Family (Firebase) pour autoriser l'accès au Drive. Le repli `googleClientId` est facultatif.",
             }),
             el(
               'a',
