@@ -90,15 +90,20 @@ export function getFirestoreDb() {
 /**
  * Connexion Google.
  *
- * Le flux par redirection est utilisé systématiquement : `signInWithPopup`
- * surveille la fenêtre ouverte via `window.closed`, ce qu'un en-tête
- * Cross-Origin-Opener-Policy (COOP) bloque (« policy would block the
- * window.closed call »). La redirection ne dépend pas de cet accès et reste
- * donc fiable, y compris sur GitHub Pages où aucun en-tête personnalisé ne
- * peut être défini.
+ * La fenêtre surgissante (`signInWithPopup`) reste le flux principal. Sous
+ * Cross-Origin-Opener-Policy, l'accès à `popupWindow.closed` est bloqué et le
+ * navigateur affiche « policy would block the window.closed call » : c'est un
+ * avertissement sans gravité, Firebase bascule alors sur son polling interne et
+ * la connexion aboutit. GitHub Pages ne permettant pas de définir un en-tête
+ * `Cross-Origin-Opener-Policy: same-origin-allow-popups`, cet avertissement ne
+ * peut pas être supprimé sans changer d'hébergement.
  *
- * @returns {Promise<null>} La page est redirigée ; le résultat est traité par
- *   `resolveRedirectSignIn()` au chargement suivant.
+ * Si la popup est indisponible (bloquée par le navigateur, environnement non
+ * supporté, stockage refusé), on retombe sur le flux par redirection ; le
+ * résultat est alors traité par `resolveRedirectSignIn()` au chargement suivant.
+ *
+ * @returns {Promise<import('firebase/auth').User|null>} L'utilisateur connecté,
+ *   ou `null` si une redirection a été déclenchée.
  */
 export async function signInWithGoogle() {
   console.log('[firebase] signInWithGoogle called');
