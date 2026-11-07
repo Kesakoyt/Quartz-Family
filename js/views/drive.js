@@ -88,7 +88,10 @@ export function mountDrive(root) {
 
   function render() {
     if (disposed) return;
-    section.replaceChildren(buildHeader(), buildBody(), buildDropOverlay());
+    // `replaceChildren(null)` insère un nœud texte « null » : on retire les
+    // sections absentes (par ex. l'overlay de dépôt quand Drive n'est pas connecté).
+    const parts = [buildHeader(), buildBody(), buildDropOverlay()];
+    section.replaceChildren(...parts.filter(Boolean));
     section.classList.remove('is-dragging');
     dragDepth = 0;
   }
