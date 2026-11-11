@@ -26,6 +26,12 @@ import {
   setDoc,
   onSnapshot,
   serverTimestamp,
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  orderBy,
 } from '../vendor/firebase/firebase-firestore.js';
 
 import { allowedDomain } from './store.js';
@@ -207,6 +213,90 @@ export function subscribeGrid(uid, onData, onError) {
         items: Array.isArray(data.items) ? data.items : [],
         pending: snapshot.metadata.hasPendingWrites,
       });
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+}
+
+/* --------------------------------------------------------------------------
+   Films et suggestions (Firestore, partagés entre membres)
+   -------------------------------------------------------------------------- */
+
+function filmPayload(film) {
+  return {
+    title: film.title,
+    year: film.year || null,
+    genre: film.genre || '',
+    description: film.description || '',
+    posterUrl: film.posterUrl || '',
+    driveUrl: film.driveUrl,
+    updatedAt: serverTimestamp(),
+  };
+}
+
+/** Crée un film dans le catalogue partagé. @returns {Promise<string>} L'identifiant du film. */
+export async function createFilm(film) {
+  const reference = await addDoc(collection(db, 'films'), {
+    ...filmPayload(film),
+    addedBy: film.addedBy || null,
+    addedAt: serverTimestamp(),
+  });
+  return reference.id;
+}
+
+export async function updateFilm(filmId, film) {
+  await updateDoc(doc(db, 'films', filmId), filmPayload(film));
+}
+
+export async function removeFilm(filmId) {
+  await deleteDoc(doc(db, 'films', filmId));
+}
+
+/**
+ * Écoute le catalogue de films en temps réel (plus récents d'abord).
+ * @param {(films: Array<Object>) => void} onData
+ * @param {(error: Error) => void} [onError]
+ */
+export function subscribeFilms(onData, onError) {
+  return onSnapshot(
+    query(collection(db, 'films'), orderBy('addedAt', 'desc')),
+    (snapshot) => {
+      onData(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+}
+
+export async function addFilmSuggestion(suggestion) {
+  const reference = await addDoc(collection(db, 'film-suggestions'), {
+    title: suggestion.title,
+    year: suggestion.year || null,
+    note: suggestion.note || '',
+    driveUrl: suggestion.driveUrl || '',
+    suggestedBy: suggestion.suggestedBy || null,
+    suggestedAt: serverTimestamp(),
+  });
+  return reference.id;
+}
+
+export async function removeFilmSuggestion(suggestionId) {
+  await deleteDoc(doc(db, 'film-suggestions', suggestionId));
+}
+
+/**
+ * Écoute les suggestions de films en temps réel (plus récentes d'abord).
+ * @param {(suggestions: Array<Object>) => void} onData
+ * @param {(error: Error) => void} [onError]
+ */
+export function subscribeFilmSuggestions(onData, onError) {
+  return onSnapshot(
+    query(collection(db, 'film-suggestions'), orderBy('suggestedAt', 'desc')),
+    (snapshot) => {
+      onData(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
     },
     (error) => {
       if (typeof onError === 'function') onError(error);

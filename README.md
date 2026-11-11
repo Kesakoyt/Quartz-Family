@@ -5,7 +5,8 @@ Le tableau de bord de l'organisation et un accès direct à Google Drive, réuni
 Quartz Family est une **PWA statique** en HTML, CSS et JavaScript natif (modules ES6), sans framework ni étape de build. Elle reprend les codes de **Windows 11 Fluent Design** : effets acryliques, coins arrondis, ombres douces, thèmes clair/sombre/système et transitions fluides.
 
 - **Tableau de bord** — grille de raccourcis personnalisables (ajout, modification, réorganisation par glisser-déposer ou flèches, suppression), synchronisée entre appareils.
-- **Barre latérale** — navigation (Accueil, Drive, Réglages) et raccourcis de l'utilisateur, suivis en temps réel depuis la grille ; remplacée par une barre inférieure sur mobile.
+- **Barre latérale** — navigation (Accueil, Drive, Films, Réglages) et raccourcis de l'utilisateur, suivis en temps réel depuis la grille ; remplacée par une barre inférieure sur mobile.
+- **Films** — vidéothèque familiale type Plex : les administrateurs (`adminEmails` dans `config.js`) ajoutent des films avec leur lien Google Drive, une affiche, une année et une description ; les autres membres peuvent suggérer des films que les administrateurs valident ou refusent.
 - **Drive** — lien direct vers [Google Drive](https://drive.google.com/) (drive.google.com), ouvert dans un nouvel onglet depuis la barre latérale et la grille d'accueil.
 - **Réglages** — profil Google, thème, état de synchronisation, installation, réinitialisation de la grille, informations et crédits.
 - **Accès restreint** — authentification Google réservée aux comptes `@kesako.org`, côté client **et** via les règles Firestore.
@@ -34,7 +35,7 @@ Quartz Family est une **PWA statique** en HTML, CSS et JavaScript natif (modules
 | --- | --- |
 | Interface | HTML5, CSS3, JavaScript ES6 natif — aucun framework |
 | Authentification | Firebase Authentication, fournisseur Google |
-| Données | Cloud Firestore, document `users/{uid}/settings/grid` |
+| Données | Cloud Firestore : `users/{uid}/settings/grid`, collections partagées `films` et `film-suggestions` |
 | Fichiers | Lien direct vers Google Drive (aucun accès aux fichiers) |
 | Hors ligne | Service worker + `localStorage` + cache persistant Firestore |
 | Hébergement | GitHub Pages (site statique) |
@@ -49,6 +50,7 @@ L'application utilise le routage par hash, compatible avec GitHub Pages sans ré
 | Route | Vue |
 | --- | --- |
 | `#/` | Tableau de bord |
+| `#/films` | Films (catalogue familial et suggestions) |
 | `#/settings` | Réglages |
 
 Le lien « Drive » de la barre latérale et de la grille d'accueil pointe directement vers `https://drive.google.com/` (ouverture dans un nouvel onglet, sans vue interne).
@@ -80,11 +82,14 @@ window.QUARTZ_CONFIG = {
     appId: "…"
   },
   allowedDomain: "kesako.org",
+  adminEmails: ["admin@kesako.org"],
   repositoryUrl: "https://github.com/kesako/quartz-family"
 };
 ```
 
 > `config.js` est **ignoré par Git**. Ne le committez jamais : chaque environnement (local, production) génère le sien.
+>
+> `adminEmails` liste les adresses autorisées à gérer le catalogue de films. La même liste doit être reflétée dans la fonction `isFilmAdmin` de [`firestore.rules`](./firestore.rules).
 
 Lancez un serveur statique — l'ouverture directe en `file://` ne fonctionne pas avec les modules ES et le service worker :
 
@@ -123,7 +128,11 @@ Le fichier [`firestore.rules`](./firestore.rules) autorise chaque membre à acc�
 ```text
 users/{uid}                     → profil
 users/{uid}/settings/grid       → grille du tableau de bord
+films/{filmId}                  → catalogue de films (lecture : tous les membres, écriture : administrateurs)
+film-suggestions/{id}           → suggestions de films (création : tous, suppression : admin ou auteur)
 ```
+
+La gestion du catalogue de films est réservée aux adresses listées dans la fonction `isFilmAdmin` du fichier de règles — tenez-la en cohérence avec `adminEmails` dans `config.js` et la variable `ADMIN_EMAILS` du déploiement.
 
 Déploiement avec la CLI Firebase :
 
@@ -161,6 +170,7 @@ Dans **Settings → Secrets and variables → Actions → Variables**, ajoutez :
 | `FIREBASE_STORAGE_BUCKET` | non | `quartz-family.firebasestorage.app` |
 | `FIREBASE_MESSAGING_SENDER_ID` | non | `846072062010` |
 | `ALLOWED_DOMAIN` | non | `kesako.org` |
+| `ADMIN_EMAILS` | non | `admin@kesako.org` (liste séparée par des virgules) |
 | `REPOSITORY_URL` | non | URL du dépôt affichée dans l'application |
 
 Le workflow génère `config.js` au moment du déploiement. Aucun secret n'est stocké dans le dépôt ; les valeurs Firebase (clé d'API Web, identifiants de projet) sont des identifiants publics, protégés par les règles Firestore et les domaines autorisés.
@@ -185,7 +195,7 @@ Le site est publié sur `https://<compte>.github.io/quartz-family/`. Ajoutez cet
 - **Android** : menu du navigateur → « Installer l'application ».
 - **iOS / iPadOS** : Safari → Partager → « Sur l'écran d'accueil ».
 
-Le manifeste déclare le mode `standalone`, les icônes (dont maskable), le raccourci Réglages, ainsi que les métadonnées iOS. Une fois installée, l'application démarre hors ligne et se met à jour via une notification « Mise à jour disponible ».
+Le manifeste déclare le mode `standalone`, les icônes (dont maskable), les raccourcis Films et Réglages, ainsi que les métadonnées iOS. Une fois installée, l'application démarre hors ligne et se met à jour via une notification « Mise à jour disponible ».
 
 ---
 
@@ -207,11 +217,13 @@ Le manifeste déclare le mode `standalone`, les icônes (dont maskable), le racc
 │   ├── store.js                # Configuration, thème, état, grille, cache local
 │   ├── firebase.js             # Auth Google, Firestore, messages d'erreur
 │   ├── grid.js                 # Synchronisation de la grille (cache + Firestore)
+│   ├── films.js                # Catalogue de films et suggestions (temps réel)
 │   ├── install.js              # Invite d'installation PWA
 │   ├── ui.js                   # Icônes, DOM, modales, toasts, formats
 │   └── views/
 │       ├── login.js            # Écran de connexion
 │       ├── dashboard.js        # Tableau de bord et édition des raccourcis
+│       ├── films.js            # Vidéothèque familiale (catalogue + suggestions)
 │       └── settings.js         # Réglages
 ├── icons/                      # Logo et icônes PWA générées
 ├── vendor/firebase/            # SDK Firebase v10.14.1 embarqué
@@ -224,6 +236,7 @@ Le manifeste déclare le mode `standalone`, les icônes (dont maskable), le racc
 
 - **Domaine** : seules les adresses `@kesako.org` sont acceptées. Un compte hors domaine est déconnecté immédiatement avec un message explicite, et les règles Firestore refusent toute lecture/écriture.
 - **Isolation** : chaque utilisateur n'accède qu'à `users/{son_uid}` et à ses sous-collections.
+- **Films** : le catalogue et les suggestions sont partagés entre membres. Seules les adresses de `adminEmails` (validées aussi par les règles Firestore) peuvent modifier le catalogue ; une suggestion n'est attribuable qu'à son auteur.
 - **Drive** : simple lien externe vers `drive.google.com` — l'application ne demande aucune autorisation Drive et n'accède à aucun fichier.
 - **Secrets** : `config.js` est ignoré par Git et généré à la volée en production. La clé d'API Firebase Web n'est pas un secret serveur ; sa portée est limitée par les règles Firestore et les domaines autorisés.
 - **Données** : aucune donnée n'est revendue ni transmise à des tiers en dehors de Firebase/Google, nécessaires au fonctionnement.
@@ -240,6 +253,7 @@ Pour aller plus loin, vous pouvez restreindre l'écran de consentement OAuth au 
 | « Configuration requise » au démarrage | `config.js` absent ou incomplet. Copiez `config.example.js` et renseignez Firebase. |
 | `auth/unauthorized-domain` | Ajoutez le domaine du site dans Firebase Authentication → Authorized domains. |
 | `permission-denied` dans la console | Les règles Firestore ne sont pas déployées ou l'adresse n'est pas `@kesako.org`. |
+| « Accès refusé » lors d'un ajout de film | Votre adresse n'est pas dans `adminEmails` (config.js) ni dans `isFilmAdmin` (firestore.rules) : les deux listes doivent coïncider. |
 | Le lien Drive n'ouvre rien | Vérifiez que votre navigateur autorise les onglets/popups pour ce site, puis ouvrez directement `https://drive.google.com/`. |
 | Ancienne version affichée | Rechargez avec `Ctrl+F5`, ou acceptez la notification de mise à jour. |
 | L'application ne s'installe pas | Vérifiez HTTPS, `manifest.json`, le service worker et utilisez Chrome/Edge. |

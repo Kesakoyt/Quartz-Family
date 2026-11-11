@@ -3,6 +3,8 @@ rules_version = '2';
 // Quartz Family — règles Cloud Firestore.
 // Chaque membre ne peut lire et écrire que ses propres documents, et
 // uniquement avec une adresse vérifiée du domaine Google Workspace autorisé.
+// Le catalogue de films est partagé : sa gestion est réservée aux
+// administrateurs listés dans isFilmAdmin (miroir de `adminEmails` dans config.js).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -17,12 +19,39 @@ service cloud.firestore {
       return isKesakoMember() && request.auth.uid == uid;
     }
 
+    // Administrateurs du catalogue de films.
+    // À tenir en cohérence avec `adminEmails` dans config.js.
+    function isFilmAdmin() {
+      return isKesakoMember()
+        && request.auth.token.email.lower() in [
+          'admin@kesako.org'
+        ];
+    }
+
     match /users/{uid} {
       allow read, write: if isOwner(uid);
 
       match /{document=**} {
         allow read, write: if isOwner(uid);
       }
+    }
+
+    // Catalogue de films : lecture par tous les membres,
+    // gestion réservée aux administrateurs.
+    match /films/{filmId} {
+      allow read: if isKesakoMember();
+      allow create, update, delete: if isFilmAdmin();
+    }
+
+    // Suggestions de films : tout membre peut suggérer et relire sa propre
+    // suggestion ; les administrateurs valident ou refusent.
+    match /film-suggestions/{suggestionId} {
+      allow read: if isKesakoMember();
+      allow create: if isKesakoMember()
+        && request.resource.data.suggestedBy != null
+        && request.resource.data.suggestedBy.uid == request.auth.uid;
+      allow delete: if isFilmAdmin()
+        || (isKesakoMember() && resource.data.suggestedBy.uid == request.auth.uid);
     }
 
     // Tout le reste est fermé par défaut.

@@ -24,6 +24,11 @@ window.QUARTZ_CONFIG = {
   // Seuls les comptes de ce domaine Google Workspace sont autorisés.
   allowedDomain: "kesako.org",
 
+  // Adresses autorisées à gérer le catalogue de films (ajout, modification,
+  // suppression). Ce miroir doit rester cohérent avec `isFilmAdmin`
+  // dans firestore.rules.
+  adminEmails: ["admin@kesako.org"],
+
   // Affiché dans Réglages → À propos (facultatif).
   repositoryUrl: "https://github.com/kesako/quartz-family"
 };

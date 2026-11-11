@@ -35,6 +35,19 @@
   ],
   "shortcuts": [
     {
+      "name": "Films",
+      "short_name": "Films",
+      "description": "La vidéothèque familiale",
+      "url": "./#/films",
+      "icons": [
+        {
+          "src": "./icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
       "name": "Réglages",
       "short_name": "Réglages",
       "description": "Compte, apparence et données",

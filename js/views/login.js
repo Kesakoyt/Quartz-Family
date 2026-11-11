@@ -68,6 +68,12 @@ export function renderLogin(options = {}) {
         el(
           'span',
           { class: 'auth-point' },
+          icon('movie', 15, { fallback: 'play' }),
+          el('span', { text: 'Vidéothèque familiale' })
+        ),
+        el(
+          'span',
+          { class: 'auth-point' },
           icon('synchronize', 15, { fallback: 'refresh' }),
           el('span', { text: 'Synchronisé' })
         ),

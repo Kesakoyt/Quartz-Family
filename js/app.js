@@ -5,7 +5,7 @@
  *  - validation de la configuration et écran d'aide ;
  *  - initialisation Firebase et contrôle strict du domaine ;
  *  - coque de l'application (barre de titre, barre latérale, menu utilisateur) ;
- *  - routage par hash (#/, #/settings) ;
+ *  - routage par hash (#/, #/films, #/settings) ;
  *  - liens externes de la navigation (Google Drive) ;
  *  - service worker, indicateur hors ligne et mises à jour.
  */
@@ -35,9 +35,11 @@ import {
   friendlyAuthError,
 } from './firebase.js';
 import { startGridSync, stopGridSync, flushGrid, retrySync } from './grid.js';
+import { startFilmsSync, stopFilmsSync } from './films.js';
 import { initInstallPrompt } from './install.js';
 import { renderLogin } from './views/login.js';
 import { mountDashboard } from './views/dashboard.js';
+import { mountFilms } from './views/films.js';
 import { mountSettings } from './views/settings.js';
 import {
   el,
@@ -50,6 +52,7 @@ import {
 
 const ROUTES = new Map([
   ['/', { label: 'Accueil', iconName: 'home', mount: mountDashboard }],
+  ['/films', { label: 'Films', iconName: 'movie', mount: mountFilms }],
   ['/settings', { label: 'Réglages', iconName: 'settings', mount: mountSettings }],
 ]);
 
@@ -85,6 +88,7 @@ let renderedUid = null;
 let authInProgress = false;
 let redirectError = '';
 let lastSyncErrorAt = 0;
+let lastFilmsErrorAt = 0;
 let profileSaveWarned = false;
 let updateToastShown = false;
 let reloadForUpdate = false;
@@ -190,6 +194,7 @@ async function handleAuthState(user) {
   state.authError = '';
   redirectError = '';
   startGridSync(user);
+  startFilmsSync(user);
   buildShell();
   renderRoute(true);
 
@@ -430,6 +435,17 @@ function buildShell() {
       },
       icon('home', 16),
       el('span', { text: 'Tableau de bord' })
+    ),
+    el(
+      'a',
+      {
+        class: 'user-menu-item',
+        href: '#/films',
+        role: 'menuitem',
+        on: { click: () => closeUserMenu() },
+      },
+      icon('movie', 16, { fallback: 'play' }),
+      el('span', { text: 'Films' })
     ),
     el(
       'a',
@@ -877,6 +893,7 @@ function disposeShell() {
 function teardownSession() {
   disposeShell();
   stopGridSync();
+  stopFilmsSync();
   renderedUid = null;
   state.user = null;
   state.grid = null;
@@ -954,6 +971,22 @@ function installGlobalListeners() {
         type: 'error',
         title: 'Synchronisation',
         action: { label: 'Réessayer', onClick: retrySync },
+      }
+    );
+  });
+
+  window.addEventListener('quartz:films-error', (event) => {
+    if (!state.user) return;
+    const now = Date.now();
+    if (now - lastFilmsErrorAt < 12000) return;
+    lastFilmsErrorAt = now;
+
+    toast(
+      (event.detail && event.detail.message) ||
+        'Le catalogue de films est momentanément indisponible.',
+      {
+        type: 'error',
+        title: 'Films',
       }
     );
   });

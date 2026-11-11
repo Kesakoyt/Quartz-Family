@@ -32,6 +32,19 @@ export function isAllowedEmail(email) {
   return normalized.endsWith('@' + allowedDomain.toLowerCase());
 }
 
+/**
+ * Cet utilisateur peut-il gérer le catalogue de films ?
+ * La liste `adminEmails` est définie dans config.js et reflétée dans firestore.rules.
+ */
+export function isAdminUser(user) {
+  const list = (CONFIG && Array.isArray(CONFIG.adminEmails) && CONFIG.adminEmails) || [];
+  const email = user && typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
+  if (!email) return false;
+  return list.some(
+    (entry) => typeof entry === 'string' && entry.trim().toLowerCase() === email
+  );
+}
+
 /** Prénom ou nom d'affichage court. */
 export function firstNameOf(user) {
   const name = (user && (user.displayName || '')).trim();
@@ -59,6 +72,10 @@ export const state = {
   grid: null,
   gridLoaded: false,
   sync: 'idle',
+  films: [],
+  filmsLoaded: false,
+  filmsError: '',
+  filmSuggestions: [],
   authError: '',
   route: '/',
 };
@@ -137,6 +154,15 @@ export const BUILTIN_APPS = {
     // Lien externe : Google Drive s'ouvre dans un nouvel onglet.
     href: 'https://drive.google.com/',
   },
+  films: {
+    id: 'builtin-films',
+    type: 'builtin',
+    app: 'films',
+    title: 'Films',
+    description: 'Cinéma familial',
+    icon: 'movie',
+    href: '#/films',
+  },
   settings: {
     id: 'builtin-settings',
     type: 'builtin',
@@ -150,6 +176,7 @@ export const BUILTIN_APPS = {
 
 const BUILTIN_BY_ID = {
   'builtin-drive': BUILTIN_APPS.drive,
+  'builtin-films': BUILTIN_APPS.films,
   'builtin-settings': BUILTIN_APPS.settings,
 };
 
@@ -160,6 +187,7 @@ export function createDefaultGrid() {
     version: 1,
     items: [
       { ...BUILTIN_APPS.drive },
+      { ...BUILTIN_APPS.films },
       { ...BUILTIN_APPS.settings },
     ],
   };
@@ -224,7 +252,7 @@ export function sanitizeGrid(raw) {
     const isBuiltin =
       entry.type === 'builtin' ||
       BUILTIN_BY_ID[entry.id] ||
-      (entry.app && ['drive', 'settings'].includes(entry.app));
+      (entry.app && ['drive', 'films', 'settings'].includes(entry.app));
 
     if (isBuiltin) {
       const builtin = BUILTIN_BY_ID[entry.id] || BUILTIN_APPS[entry.app];
@@ -273,6 +301,62 @@ export function isBuiltinId(id) {
 export function sameGrid(a, b) {
   if (!a || !b) return false;
   return JSON.stringify(a.items) === JSON.stringify(b.items);
+}
+
+/* --------------------------------------------------------------------------
+   Catalogue de films
+   -------------------------------------------------------------------------- */
+
+const FILM_TITLE_MAX = 80;
+const FILM_GENRE_MAX = 40;
+const FILM_DESC_MAX = 600;
+const FILM_NOTE_MAX = 300;
+
+/** Année valide (1888–2100) ou `null`. */
+export function sanitizeFilmYear(value) {
+  const digits = String(value == null ? '' : value).replace(/[^0-9]/g, '').slice(0, 4);
+  if (!digits) return null;
+  const year = parseInt(digits, 10);
+  if (!Number.isFinite(year) || year < 1888 || year > 2100) return null;
+  return year;
+}
+
+/**
+ * Normalise un film provenant de Firestore ou du formulaire.
+ * Le titre et le lien Google Drive sont obligatoires.
+ */
+export function sanitizeFilm(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const title = String(raw.title || '').trim().slice(0, FILM_TITLE_MAX);
+  const driveUrl = normalizeHttpUrl(raw.driveUrl);
+  if (!title || !driveUrl) return null;
+
+  return {
+    id: typeof raw.id === 'string' ? raw.id : null,
+    title,
+    year: sanitizeFilmYear(raw.year),
+    genre: String(raw.genre || '').trim().slice(0, FILM_GENRE_MAX) || '',
+    description: String(raw.description || '').trim().slice(0, FILM_DESC_MAX) || '',
+    posterUrl: normalizeHttpUrl(raw.posterUrl) || '',
+    driveUrl,
+    addedBy: raw.addedBy && typeof raw.addedBy === 'object' ? raw.addedBy : null,
+  };
+}
+
+/** Normalise une suggestion de film (seul le titre est obligatoire). */
+export function sanitizeFilmSuggestion(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const title = String(raw.title || '').trim().slice(0, FILM_TITLE_MAX);
+  if (!title) return null;
+
+  return {
+    id: typeof raw.id === 'string' ? raw.id : null,
+    title,
+    year: sanitizeFilmYear(raw.year),
+    note: String(raw.note || '').trim().slice(0, FILM_NOTE_MAX) || '',
+    driveUrl: normalizeHttpUrl(raw.driveUrl) || '',
+    suggestedBy: raw.suggestedBy && typeof raw.suggestedBy === 'object' ? raw.suggestedBy : null,
+  };
 }
 
 /* --------------------------------------------------------------------------
