@@ -134,7 +134,8 @@ export const BUILTIN_APPS = {
     title: 'Drive',
     description: 'Fichiers et documents',
     icon: 'google-drive',
-    href: '#/drive',
+    // Lien externe : Google Drive s'ouvre dans un nouvel onglet.
+    href: 'https://drive.google.com/',
   },
   settings: {
     id: 'builtin-settings',

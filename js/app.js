@@ -5,7 +5,8 @@
  *  - validation de la configuration et écran d'aide ;
  *  - initialisation Firebase et contrôle strict du domaine ;
  *  - coque de l'application (barre de titre, navigation, menu utilisateur) ;
- *  - routage par hash (#/, #/drive, #/settings) ;
+ *  - routage par hash (#/, #/settings) ;
+ *  - liens externes de la navigation (Google Drive) ;
  *  - service worker, indicateur hors ligne et mises à jour.
  */
 
@@ -34,10 +35,8 @@ import {
 } from './firebase.js';
 import { startGridSync, stopGridSync, flushGrid, retrySync } from './grid.js';
 import { initInstallPrompt } from './install.js';
-import { clearDriveToken } from './drive.js';
 import { renderLogin } from './views/login.js';
 import { mountDashboard } from './views/dashboard.js';
-import { mountDrive } from './views/drive.js';
 import { mountSettings } from './views/settings.js';
 import {
   el,
@@ -50,9 +49,20 @@ import {
 
 const ROUTES = new Map([
   ['/', { label: 'Accueil', iconName: 'home', mount: mountDashboard }],
-  ['/drive', { label: 'Drive', iconName: 'google-drive', mount: mountDrive }],
   ['/settings', { label: 'Réglages', iconName: 'settings', mount: mountSettings }],
 ]);
+
+/** Lien Drive : ouvre Google Drive dans un nouvel onglet (aucune vue interne). */
+const DRIVE_URL = 'https://drive.google.com/';
+
+const EXTERNAL_LINKS = [
+  {
+    label: 'Drive',
+    iconName: 'google-drive',
+    url: DRIVE_URL,
+    title: 'Ouvrir Google Drive dans un nouvel onglet',
+  },
+];
 
 const SYNC_INFO = {
   idle: { label: 'En attente', iconName: 'cloud', title: 'Synchronisation en attente' },
@@ -209,7 +219,7 @@ function renderSetupScreen(initError = null) {
     'ol',
     { class: 'setup-steps' },
     el('li', {}, 'Copiez ', el('code', { text: 'config.example.js' }), ' en ', el('code', { text: 'config.js' }), ' à la racine du projet.'),
-    el('li', {}, 'Renseignez la configuration Firebase du projet et, si nécessaire, le client OAuth Google Drive.'),
+    el('li', {}, 'Renseignez la configuration Firebase du projet dans ce fichier.'),
     el('li', {}, 'Déployez le site (GitHub Pages) puis rechargez cette page.')
   );
 
@@ -222,7 +232,6 @@ function renderSetupScreen(initError = null) {
     '    projectId: "quartz-family",',
     '    appId: "…"',
     '  },',
-    '  googleClientId: "…apps.googleusercontent.com",',
     '  allowedDomain: "kesako.org"',
     '};',
   ].join('\n');
@@ -308,7 +317,7 @@ function buildShell() {
   const nav = el(
     'nav',
     { class: 'app-nav', 'aria-label': 'Navigation principale' },
-    [...ROUTES.entries()].map(([path, entry]) => buildNavLink(path, entry, false))
+    buildNavLinks(false)
   );
 
   const syncChip = el(
@@ -501,7 +510,7 @@ function buildShell() {
   const mobileNav = el(
     'nav',
     { class: 'mobile-nav', 'aria-label': 'Navigation mobile' },
-    [...ROUTES.entries()].map(([path, entry]) => buildNavLink(path, entry, true))
+    buildNavLinks(true)
   );
 
   const shell = el(
@@ -555,6 +564,16 @@ function buildShell() {
   );
 }
 
+/** Construit les liens de navigation : Accueil, liens externes, puis les autres vues. */
+function buildNavLinks(mobile) {
+  const entries = [...ROUTES.entries()];
+  const [first, ...rest] = entries;
+  const links = first ? [buildNavLink(first[0], first[1], mobile)] : [];
+  for (const entry of EXTERNAL_LINKS) links.push(buildExternalNavLink(entry, mobile));
+  for (const [path, entry] of rest) links.push(buildNavLink(path, entry, mobile));
+  return links;
+}
+
 function buildNavLink(path, entry, mobile) {
   const node = el(
     'a',
@@ -567,6 +586,21 @@ function buildNavLink(path, entry, mobile) {
     el('span', { text: entry.label })
   );
   return node;
+}
+
+function buildExternalNavLink(entry, mobile) {
+  return el(
+    'a',
+    {
+      class: mobile ? 'mobile-nav-link' : 'nav-link',
+      href: entry.url,
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      title: entry.title || entry.label,
+    },
+    icon(entry.iconName, mobile ? 21 : 17, { fallback: 'link' }),
+    el('span', { text: entry.label })
+  );
 }
 
 function updateUserChrome() {
@@ -760,7 +794,6 @@ function disposeShell() {
 function teardownSession() {
   disposeShell();
   stopGridSync();
-  clearDriveToken();
   renderedUid = null;
   state.user = null;
   state.grid = null;

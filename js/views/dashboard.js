@@ -215,19 +215,24 @@ export function mountDashboard(root) {
     );
   }
 
+  /** Un lien intégré peut désormais pointer vers un site externe (ex. Google Drive). */
+  function isExternalHref(href) {
+    return typeof href === 'string' && /^https?:\/\//i.test(href);
+  }
+
   function buildLinkTile(item, builtin) {
     const href = builtin ? item.href : item.url;
-    const label = builtin
-      ? `${item.title} — ${item.description || 'Application intégrée'}`
-      : `${item.title} — ${displayHost(item.url)}`;
+    const external = isExternalHref(href);
+    const subtitle = builtin && !external ? item.description || 'Application intégrée' : displayHost(href);
+    const label = `${item.title} — ${subtitle}`;
 
     return el(
       'a',
       {
         class: 'tile' + (builtin ? ' tile--builtin' : ''),
         href,
-        target: builtin ? null : '_blank',
-        rel: builtin ? null : 'noopener noreferrer',
+        target: external ? '_blank' : null,
+        rel: external ? 'noopener noreferrer' : null,
         title: label,
         'aria-label': label,
       },
@@ -236,12 +241,9 @@ export function mountDashboard(root) {
         'span',
         { class: 'tile-text' },
         el('span', { class: 'tile-title', text: item.title }),
-        el('span', {
-          class: 'tile-desc',
-          text: builtin ? item.description || 'Application intégrée' : displayHost(item.url),
-        })
+        el('span', { class: 'tile-desc', text: subtitle })
       ),
-      icon(builtin ? 'chevron-right' : 'external-link', 15, {
+      icon(external ? 'external-link' : 'chevron-right', 15, {
         className: 'tile-open',
       })
     );
@@ -270,7 +272,10 @@ export function mountDashboard(root) {
           el('span', { class: 'tile-title', text: item.title }),
           el('span', {
             class: 'tile-desc',
-            text: builtin ? 'Application intégrée' : displayHost(item.url),
+            text:
+              builtin && !isExternalHref(item.href)
+                ? 'Application intégrée'
+                : displayHost(builtin ? item.href : item.url),
           })
         )
       ),

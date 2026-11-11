@@ -13,7 +13,6 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
-  reauthenticateWithPopup,
   signOut,
   onAuthStateChanged,
 } from '../vendor/firebase/firebase-auth.js';
@@ -144,45 +143,6 @@ export async function resolveRedirectSignIn() {
     console.error('[firebase] getRedirectResult error', error && error.code, error && error.message);
     throw error;
   }
-}
-
-/**
- * Demande un jeton d'accès OAuth Google avec des scopes supplémentaires.
- *
- * On réutilise la fenêtre Firebase (`reauthenticateWithPopup`) plutôt qu'une
- * popup Google Identity Services directe : le relais Firebase passe par
- * `authDomain`, qui fonctionne dans les environnements où la popup GIS reste
- * bloquée (COOP, stockage tiers, etc.). Le jeton renvoyé est un vrai jeton
- * OAuth Google : il s'utilise avec `Authorization: Bearer <token>`.
- *
- * @param {string[]} [scopes] scopes OAuth supplémentaires (ex. drive.file).
- * @returns {Promise<{ accessToken: string, idToken: string }>}
- */
-export async function requestGoogleAccessToken(scopes = []) {
-  if (!auth || !auth.currentUser) {
-    const error = new Error('Aucune session Google active.');
-    error.code = 'auth/no-current-user';
-    throw error;
-  }
-
-  const tokenProvider = new GoogleAuthProvider();
-  tokenProvider.setCustomParameters({ hd: allowedDomain });
-  for (const scope of scopes) {
-    if (typeof scope === 'string' && scope.trim()) tokenProvider.addScope(scope.trim());
-  }
-
-  const result = await reauthenticateWithPopup(auth.currentUser, tokenProvider);
-  const credential = GoogleAuthProvider.credentialFromResult(result);
-  if (!credential || !credential.accessToken) {
-    const error = new Error("Google n'a pas renvoyé de jeton d'accès.");
-    error.code = 'auth/no-access-token';
-    throw error;
-  }
-
-  return {
-    accessToken: credential.accessToken,
-    idToken: credential.idToken || '',
-  };
 }
 
 export function watchAuthState(callback) {

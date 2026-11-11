@@ -63,7 +63,7 @@ export function renderLogin(options = {}) {
           'span',
           { class: 'auth-point' },
           icon('google-drive', 15),
-          el('span', { text: 'Drive intégré' })
+          el('span', { text: 'Accès au Drive' })
         ),
         el(
           'span',

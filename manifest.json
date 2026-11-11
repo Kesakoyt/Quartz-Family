@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Quartz Family",
   "short_name": "Quartz",
-  "description": "Le tableau de bord et le Drive de l'organisation, réunis dans une application web installable.",
+  "description": "Le tableau de bord de l'organisation et un accès direct à Google Drive, dans une application web installable.",
   "lang": "fr",
   "dir": "ltr",
   "start_url": "./#/",
@@ -34,19 +34,6 @@
     }
   ],
   "shortcuts": [
-    {
-      "name": "Drive",
-      "short_name": "Drive",
-      "description": "Parcourir vos fichiers et dossiers",
-      "url": "./#/drive",
-      "icons": [
-        {
-          "src": "./icons/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
     {
       "name": "Réglages",
       "short_name": "Réglages",

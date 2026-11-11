@@ -6,10 +6,10 @@
  *  - navigation : réseau d'abord, puis index.html en cache ;
  *  - fichiers statiques : cache d'abord, revalidation en arrière-plan ;
  *  - icônes Icons8 : cache d'abord (réponses opaques acceptées) ;
- *  - Firebase, Google Identity et les API Google ne sont jamais interceptés.
+ *  - les services tiers (Firebase) ne sont jamais interceptés.
  */
 
-const VERSION = '1.0.3';
+const VERSION = '1.0.4';
 const CORE_CACHE = `quartz-core-v${VERSION}`;
 const ICON_CACHE = `quartz-icons-v${VERSION}`;
 const KEEP_CACHES = new Set([CORE_CACHE, ICON_CACHE]);
@@ -28,10 +28,8 @@ const PRECACHE_PATHS = [
   './js/firebase.js',
   './js/grid.js',
   './js/install.js',
-  './js/drive.js',
   './js/views/login.js',
   './js/views/dashboard.js',
-  './js/views/drive.js',
   './js/views/settings.js',
   './vendor/firebase/firebase-app.js',
   './vendor/firebase/firebase-auth.js',
@@ -120,7 +118,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Les services Google (Firebase, GIS, Drive) passent directement au réseau.
+  // Les services tiers (Firebase) passent directement au réseau.
   if (isThirdParty(url)) return;
 
   if (request.mode === 'navigate') {

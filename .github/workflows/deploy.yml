@@ -41,7 +41,6 @@ jobs:
             };
             const config = {
               firebaseConfig,
-              googleClientId: process.env.GOOGLE_CLIENT_ID || '',
               allowedDomain: process.env.ALLOWED_DOMAIN || 'kesako.org',
               repositoryUrl: process.env.REPOSITORY_URL || `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`
             };
@@ -58,7 +57,6 @@ jobs:
           FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
           FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
           FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
           ALLOWED_DOMAIN: ${{ vars.ALLOWED_DOMAIN }}
           REPOSITORY_URL: ${{ vars.REPOSITORY_URL }}
           GITHUB_REPOSITORY: ${{ github.repository }}

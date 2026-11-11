@@ -1,11 +1,11 @@
 # Quartz Family
 
-Le tableau de bord et le Drive de l'organisation, réunis dans une application web installable, rapide et élégante.
+Le tableau de bord de l'organisation et un accès direct à Google Drive, réunis dans une application web installable, rapide et élégante.
 
 Quartz Family est une **PWA statique** en HTML, CSS et JavaScript natif (modules ES6), sans framework ni étape de build. Elle reprend les codes de **Windows 11 Fluent Design** : effets acryliques, coins arrondis, ombres douces, thèmes clair/sombre/système et transitions fluides.
 
 - **Tableau de bord** — grille de raccourcis personnalisables (ajout, modification, réorganisation par glisser-déposer ou flèches, suppression), synchronisée entre appareils.
-- **Drive** — explorateur Google Drive (liste ou grille), import par glisser-déposer ou sélecteur, création de dossiers, mise à la corbeille, ouverture des Google Docs/Sheets/Slides dans leurs applications officielles.
+- **Drive** — lien direct vers [Google Drive](https://drive.google.com/) (drive.google.com), ouvert dans un nouvel onglet depuis la barre de navigation et la grille d'accueil.
 - **Réglages** — profil Google, thème, état de synchronisation, installation, réinitialisation de la grille, informations et crédits.
 - **Accès restreint** — authentification Google réservée aux comptes `@kesako.org`, côté client **et** via les règles Firestore.
 - **Hors ligne** — service worker, cache applicatif et cache local de la grille ; les modifications sont synchronisées au retour du réseau.
@@ -17,7 +17,6 @@ Quartz Family est une **PWA statique** en HTML, CSS et JavaScript natif (modules
 - [Aperçu technique](#aperçu-technique)
 - [Démarrage local](#démarrage-local)
 - [Configuration Firebase](#configuration-firebase)
-- [Google Drive (OAuth)](#google-drive-oauth)
 - [Règles Firestore](#règles-firestore)
 - [Déploiement sur GitHub Pages](#déploiement-sur-github-pages)
 - [Installation de la PWA](#installation-de-la-pwa)
@@ -35,7 +34,7 @@ Quartz Family est une **PWA statique** en HTML, CSS et JavaScript natif (modules
 | Interface | HTML5, CSS3, JavaScript ES6 natif — aucun framework |
 | Authentification | Firebase Authentication, fournisseur Google |
 | Données | Cloud Firestore, document `users/{uid}/settings/grid` |
-| Fichiers | Google Drive API v3 via OAuth 2.0 (`drive.file`) |
+| Fichiers | Lien direct vers Google Drive (aucun accès aux fichiers) |
 | Hors ligne | Service worker + `localStorage` + cache persistant Firestore |
 | Hébergement | GitHub Pages (site statique) |
 | Langue | Français |
@@ -49,8 +48,9 @@ L'application utilise le routage par hash, compatible avec GitHub Pages sans ré
 | Route | Vue |
 | --- | --- |
 | `#/` | Tableau de bord |
-| `#/drive` | Drive |
 | `#/settings` | Réglages |
+
+Le lien « Drive » de la navigation et de la grille d'accueil pointe directement vers `https://drive.google.com/` (ouverture dans un nouvel onglet, sans vue interne).
 
 ---
 
@@ -78,7 +78,6 @@ window.QUARTZ_CONFIG = {
     messagingSenderId: "…",
     appId: "…"
   },
-  googleClientId: "…apps.googleusercontent.com",
   allowedDomain: "kesako.org",
   repositoryUrl: "https://github.com/kesako/quartz-family"
 };
@@ -113,42 +112,6 @@ Ouvrez ensuite `http://localhost:8080`.
 6. Dans **Firestore Database**, créez une base en mode production, puis déployez les règles ci-dessous.
 
 Le champ `hd: 'kesako.org'` est transmis au fournisseur Google pour proposer les comptes du domaine, mais **ce n'est pas une sécurité** : l'application vérifie elle-même l'adresse et déconnecte immédiatement tout compte hors domaine. Les règles Firestore appliquent la même restriction côté serveur.
-
----
-
-## Google Drive (OAuth)
-
-L'accès au Drive utilise un jeton **OAuth 2.0** avec le scope minimal :
-
-```text
-https://www.googleapis.com/auth/drive.file
-```
-
-Ce scope permet uniquement de voir et gérer les fichiers **créés ou ouverts par Quartz Family**. L'application ne peut pas parcourir l'ensemble du Drive de l'utilisateur.
-
-### Jeton OAuth
-
-Par défaut, Quartz Family réutilise la session Google **Firebase** : la première fois que vous ouvrez le Drive, une fenêtre demande l'autorisation `drive.file`, puis le jeton reste en mémoire (jamais écrit dans le stockage local). Ce flux passe par `authDomain` et fonctionne même lorsque la fenêtre Google Identity Services directe est bloquée.
-
-Pour que ce mode fonctionne, le projet Firebase (`quartz-family`) doit avoir :
-
-1. **Google Drive API** activée (APIs & Services → Library) ;
-2. le scope `https://www.googleapis.com/auth/drive.file` autorisé sur l'**écran de consentement OAuth** (type « Interne » recommandé pour le Workspace `kesako.org`, sinon « Externe » avec les comptes de test).
-
-### Repli Google Identity Services (optionnel)
-
-`googleClientId` active un second chemin, utilisé si Firebase ne peut pas fournir de jeton. Pour le configurer :
-
-1. Ouvrez [Google Cloud Console](https://console.cloud.google.com/) et sélectionnez le projet qui contient votre client OAuth.
-2. Activez **Google Drive API** (APIs & Services → Library).
-3. Créez un identifiant **OAuth client ID** de type **Application Web**.
-4. Dans **Authorized JavaScript origins**, ajoutez :
-   - `http://localhost:8080` (ou le port utilisé) ;
-   - `https://<votre-compte>.github.io` ;
-   - votre domaine personnalisé le cas échéant.
-5. Copiez l'ID client dans `googleClientId`.
-
-Sans `googleClientId`, le Drive reste disponible via la session Firebase.
 
 ---
 
@@ -196,7 +159,6 @@ Dans **Settings → Secrets and variables → Actions → Variables**, ajoutez :
 | `FIREBASE_AUTH_DOMAIN` | non | `quartz-family.firebaseapp.com` |
 | `FIREBASE_STORAGE_BUCKET` | non | `quartz-family.firebasestorage.app` |
 | `FIREBASE_MESSAGING_SENDER_ID` | non | `846072062010` |
-| `GOOGLE_CLIENT_ID` | recommandé | `…apps.googleusercontent.com` |
 | `ALLOWED_DOMAIN` | non | `kesako.org` |
 | `REPOSITORY_URL` | non | URL du dépôt affichée dans l'application |
 
@@ -210,7 +172,7 @@ git commit -m "Quartz Family"
 git push origin main
 ```
 
-Le site est publié sur `https://<compte>.github.io/quartz-family/`. Ajoutez cette origine dans Firebase Authentication et dans le client OAuth Google.
+Le site est publié sur `https://<compte>.github.io/quartz-family/`. Ajoutez cette origine dans Firebase Authentication.
 
 > Si vous préférez un déploiement manuel, publiez le contenu du dépôt sur une branche `gh-pages` en veillant à inclure un `config.js` généré. Le fichier `.nojekyll` est présent pour éviter le traitement Jekyll.
 
@@ -222,7 +184,7 @@ Le site est publié sur `https://<compte>.github.io/quartz-family/`. Ajoutez cet
 - **Android** : menu du navigateur → « Installer l'application ».
 - **iOS / iPadOS** : Safari → Partager → « Sur l'écran d'accueil ».
 
-Le manifeste déclare le mode `standalone`, les icônes (dont maskable), les raccourcis Drive et Réglages, ainsi que les métadonnées iOS. Une fois installée, l'application démarre hors ligne et se met à jour via une notification « Mise à jour disponible ».
+Le manifeste déclare le mode `standalone`, les icônes (dont maskable), le raccourci Réglages, ainsi que les métadonnées iOS. Une fois installée, l'application démarre hors ligne et se met à jour via une notification « Mise à jour disponible ».
 
 ---
 
@@ -244,13 +206,11 @@ Le manifeste déclare le mode `standalone`, les icônes (dont maskable), les rac
 │   ├── store.js                # Configuration, thème, état, grille, cache local
 │   ├── firebase.js             # Auth Google, Firestore, messages d'erreur
 │   ├── grid.js                 # Synchronisation de la grille (cache + Firestore)
-│   ├── drive.js                # Client Google Drive (GIS, uploads, corbeille)
 │   ├── install.js              # Invite d'installation PWA
 │   ├── ui.js                   # Icônes, DOM, modales, toasts, formats
 │   └── views/
 │       ├── login.js            # Écran de connexion
 │       ├── dashboard.js        # Tableau de bord et édition des raccourcis
-│       ├── drive.js            # Explorateur Drive
 │       └── settings.js         # Réglages
 ├── icons/                      # Logo et icônes PWA générées
 ├── vendor/firebase/            # SDK Firebase v10.14.1 embarqué
@@ -263,7 +223,7 @@ Le manifeste déclare le mode `standalone`, les icônes (dont maskable), les rac
 
 - **Domaine** : seules les adresses `@kesako.org` sont acceptées. Un compte hors domaine est déconnecté immédiatement avec un message explicite, et les règles Firestore refusent toute lecture/écriture.
 - **Isolation** : chaque utilisateur n'accède qu'à `users/{son_uid}` et à ses sous-collections.
-- **Drive** : scope `drive.file` uniquement ; le jeton OAuth reste en mémoire et n'est jamais écrit dans le stockage local.
+- **Drive** : simple lien externe vers `drive.google.com` — l'application ne demande aucune autorisation Drive et n'accède à aucun fichier.
 - **Secrets** : `config.js` est ignoré par Git et généré à la volée en production. La clé d'API Firebase Web n'est pas un secret serveur ; sa portée est limitée par les règles Firestore et les domaines autorisés.
 - **Données** : aucune donnée n'est revendue ni transmise à des tiers en dehors de Firebase/Google, nécessaires au fonctionnement.
 - **Hors ligne** : le cache local (`localStorage`, cache Firestore) peut contenir la grille et le profil. Utilisez « Se déconnecter » sur un appareil partagé.
@@ -279,9 +239,7 @@ Pour aller plus loin, vous pouvez restreindre l'écran de consentement OAuth au 
 | « Configuration requise » au démarrage | `config.js` absent ou incomplet. Copiez `config.example.js` et renseignez Firebase. |
 | `auth/unauthorized-domain` | Ajoutez le domaine du site dans Firebase Authentication → Authorized domains. |
 | `permission-denied` dans la console | Les règles Firestore ne sont pas déployées ou l'adresse n'est pas `@kesako.org`. |
-| Drive affiche « Configuration requise » | `config.js` est absent ou Firebase n'est pas initialisé ; `googleClientId` n'est plus obligatoire. |
-| Drive demandé mais refusé (scope) | Autorisez `https://www.googleapis.com/auth/drive.file` sur l'écran de consentement OAuth du projet Firebase, puis reconnectez-vous. |
-| `redirect_uri_mismatch` / origine refusée | Ajoutez l'origine exacte (`https://…`) dans le client OAuth Google (repli `googleClientId`). |
+| Le lien Drive n'ouvre rien | Vérifiez que votre navigateur autorise les onglets/popups pour ce site, puis ouvrez directement `https://drive.google.com/`. |
 | Ancienne version affichée | Rechargez avec `Ctrl+F5`, ou acceptez la notification de mise à jour. |
 | L'application ne s'installe pas | Vérifiez HTTPS, `manifest.json`, le service worker et utilisez Chrome/Edge. |
 
@@ -293,7 +251,7 @@ Les erreurs détaillées sont disponibles dans la console du navigateur (F12).
 
 - Icônes : [Icons8 Fluency](https://icons8.com/) — licence gratuite avec attribution.
 - Authentification et base de données : [Firebase](https://firebase.google.com/).
-- Fichiers : [Google Drive API v3](https://developers.google.com/drive).
+- Fichiers : [Google Drive](https://drive.google.com/).
 - Hébergement : [GitHub Pages](https://pages.github.com/).
 
 Produit non affilié à Google. « Google Drive », « Google Workspace » et les logos associés sont des marques de Google LLC.

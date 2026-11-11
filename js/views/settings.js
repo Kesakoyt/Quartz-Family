@@ -394,7 +394,7 @@ export function mountSettings(root) {
       ),
       el('p', {
         class: 'settings-row-hint',
-        text: "Interface Fluent, synchronisation Firebase et accès Google Drive limité au strict nécessaire. Aucune donnée n'est revendue ni transmise à des tiers.",
+        text: "Interface Fluent, synchronisation Firebase et lien direct vers Google Drive. Aucune donnée n'est revendue ni transmise à des tiers.",
       }),
       el(
         'div',
@@ -402,7 +402,7 @@ export function mountSettings(root) {
         creditRow('Application', `${APP_NAME} v${APP_VERSION}`),
         creditRow('Icônes', 'Icons8 Fluency', 'https://icons8.com/'),
         creditRow('Authentification & données', 'Firebase · Google Cloud', 'https://firebase.google.com/'),
-        creditRow('Fichiers', 'Google Drive API v3', 'https://developers.google.com/drive'),
+        creditRow('Fichiers', 'Google Drive', 'https://drive.google.com/'),
         creditRow('Hébergement', 'GitHub Pages', 'https://pages.github.com/')
       ),
       el(
@@ -536,7 +536,7 @@ export function mountSettings(root) {
       { class: 'privacy-content' },
       el('p', {
         class: 'modal-message',
-        text: "Quartz Family utilise uniquement les services nécessaires à son fonctionnement : authentification Google, Cloud Firestore pour la grille de raccourcis et Google Drive via le scope restreint drive.file.",
+        text: "Quartz Family utilise uniquement les services nécessaires à son fonctionnement : authentification Google et Cloud Firestore pour la grille de raccourcis. Google Drive est proposé sous forme de lien externe, sans accès à vos fichiers.",
       }),
       el('h3', { class: 'privacy-subtitle', text: "Données traitées" }),
       el(
@@ -544,7 +544,6 @@ export function mountSettings(root) {
         { class: 'privacy-list' },
         el('li', {}, el('strong', { text: 'Compte Google : ' }), 'nom, adresse e-mail, photo de profil (pour l’affichage et la vérification du domaine).'),
         el('li', {}, el('strong', { text: 'Grille de raccourcis : ' }), 'vos liens personnalisés enregistrés dans users/{uid}/settings/grid.'),
-        el('li', {}, el('strong', { text: 'Google Drive : ' }), 'accès limité aux fichiers créés ou ouverts par l’application (scope drive.file). Aucun jeton n’est stocké de manière persistante.'),
         el('li', {}, el('strong', { text: 'Préférences locales : ' }), 'thème choisi (localStorage).')
       ),
       el('h3', { class: 'privacy-subtitle', text: 'Sécurité' }),
@@ -553,7 +552,6 @@ export function mountSettings(root) {
         { class: 'privacy-list' },
         el('li', {}, "Accès restreint aux comptes du domaine @kesako.org, contrôlé côté client et par les règles Firestore."),
         el('li', {}, 'Chaque utilisateur ne peut accéder qu’à ses propres données Firestore.'),
-        el('li', {}, 'L’autorisation Drive est demandée à la demande et limitée au strict nécessaire.'),
         el('li', {}, 'Aucune donnée n’est revendue ni transmise à des tiers.')
       ),
       el('h3', { class: 'privacy-subtitle', text: 'Contact' }),
