@@ -44,7 +44,7 @@ service cloud.firestore {
       return emails is list
         && emails.size() >= 1
         && emails.size() <= 20
-        && emails.all((email) =>
+        && emails.all(email,
              email is string
              && email == email.lower()
              && email.matches('.*@kesako\\.org$'))
