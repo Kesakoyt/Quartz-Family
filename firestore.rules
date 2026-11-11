@@ -3,8 +3,11 @@ rules_version = '2';
 // Quartz Family — règles Cloud Firestore.
 // Chaque membre ne peut lire et écrire que ses propres documents, et
 // uniquement avec une adresse vérifiée du domaine Google Workspace autorisé.
+//
 // Le catalogue de films est partagé : sa gestion est réservée aux
-// administrateurs listés dans isFilmAdmin (miroir de `adminEmails` dans config.js).
+// administrateurs, dont la liste vit dans le document `config/films-admins`.
+// Aucune adresse n'est inscrite dans ce fichier : la liste est créée une
+// fois depuis la console Firebase, puis gérée depuis l'application.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -19,13 +22,33 @@ service cloud.firestore {
       return isKesakoMember() && request.auth.uid == uid;
     }
 
-    // Administrateurs du catalogue de films.
-    // À tenir en cohérence avec `adminEmails` dans config.js.
+    // Liste des administrateurs de la vidéothèque, stockée dans Firestore.
+    // Un document absent équivaut à « aucun administrateur ».
+    function filmAdminEmails() {
+      return exists(/databases/$(database)/documents/config/films-admins)
+        ? get(/databases/$(database)/documents/config/films-admins).data.emails
+        : null;
+    }
+
     function isFilmAdmin() {
       return isKesakoMember()
-        && request.auth.token.email.lower() in [
-          'admin@kesako.org'
-        ];
+        && request.auth.token.email != null
+        && filmAdminEmails() != null
+        && request.auth.token.email.lower() in filmAdminEmails();
+    }
+
+    // La liste doit rester exploitable : 1 à 20 adresses vérifiées du
+    // domaine, en minuscules. L'administrateur courant ne peut pas se
+    // retirer lui-même, pour éviter tout verrouillage de la vidéothèque.
+    function isValidAdminList(emails) {
+      return emails is list
+        && emails.size() >= 1
+        && emails.size() <= 20
+        && emails.all((email) =>
+             email is string
+             && email == email.lower()
+             && email.matches('.*@kesako\\.org$'))
+        && request.auth.token.email.lower() in emails;
     }
 
     match /users/{uid} {
@@ -34,6 +57,15 @@ service cloud.firestore {
       match /{document=**} {
         allow read, write: if isOwner(uid);
       }
+    }
+
+    // Administrateurs de la vidéothèque : lisibles par tous les membres,
+    // modifiables uniquement par un administrateur.
+    match /config/films-admins {
+      allow read: if isKesakoMember();
+      allow update: if isFilmAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emails', 'updatedAt'])
+        && isValidAdminList(request.resource.data.emails);
     }
 
     // Catalogue de films : lecture par tous les membres,

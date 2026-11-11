@@ -304,6 +304,38 @@ export function subscribeFilmSuggestions(onData, onError) {
   );
 }
 
+/** Enregistre la liste des administrateurs des films (document partagé). */
+export async function saveFilmAdmins(emails) {
+  await setDoc(doc(db, 'config', 'films-admins'), {
+    emails,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Écoute la liste des administrateurs des films en temps réel.
+ * Un document absent équivaut à « aucun administrateur configuré » :
+ * il est créé une fois depuis la console Firebase.
+ * @param {(emails: Array<string>) => void} onData
+ * @param {(error: Error) => void} [onError]
+ */
+export function subscribeFilmAdmins(onData, onError) {
+  return onSnapshot(
+    doc(db, 'config', 'films-admins'),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onData([]);
+        return;
+      }
+      const emails = snapshot.data().emails;
+      onData(Array.isArray(emails) ? emails : []);
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+}
+
 /* --------------------------------------------------------------------------
    Messages d'erreur en français
    -------------------------------------------------------------------------- */

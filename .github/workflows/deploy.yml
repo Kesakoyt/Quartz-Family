@@ -42,10 +42,6 @@ jobs:
             const config = {
               firebaseConfig,
               allowedDomain: process.env.ALLOWED_DOMAIN || 'kesako.org',
-              adminEmails: (process.env.ADMIN_EMAILS || 'admin@kesako.org')
-                .split(',')
-                .map((entry) => entry.trim())
-                .filter(Boolean),
               repositoryUrl: process.env.REPOSITORY_URL || `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`
             };
             fs.writeFileSync(
@@ -62,7 +58,6 @@ jobs:
           FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
           FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
           ALLOWED_DOMAIN: ${{ vars.ALLOWED_DOMAIN }}
-          ADMIN_EMAILS: ${{ vars.ADMIN_EMAILS }}
           REPOSITORY_URL: ${{ vars.REPOSITORY_URL }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_SERVER_URL: ${{ github.server_url }}

@@ -34,13 +34,14 @@ export function isAllowedEmail(email) {
 
 /**
  * Cet utilisateur peut-il gérer le catalogue de films ?
- * La liste `adminEmails` est définie dans config.js et reflétée dans firestore.rules.
+ * La liste des administrateurs vit dans Firestore (document partagé
+ * `config/films-admins`) et arrive en temps réel dans `state.filmAdmins` :
+ * aucune adresse n'est inscrite dans le code ou la configuration déployée.
  */
 export function isAdminUser(user) {
-  const list = (CONFIG && Array.isArray(CONFIG.adminEmails) && CONFIG.adminEmails) || [];
   const email = user && typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
   if (!email) return false;
-  return list.some(
+  return (state.filmAdmins || []).some(
     (entry) => typeof entry === 'string' && entry.trim().toLowerCase() === email
   );
 }
@@ -76,6 +77,7 @@ export const state = {
   filmsLoaded: false,
   filmsError: '',
   filmSuggestions: [],
+  filmAdmins: [],
   authError: '',
   route: '/',
 };
@@ -182,9 +184,17 @@ const BUILTIN_BY_ID = {
 
 const MAX_CUSTOM_ITEMS = 60;
 
+/**
+ * Version du schéma de la grille. La version 2 fait de la grille une liste
+ * libre : toutes les tuiles, y compris les applications intégrées, peuvent
+ * être supprimées. Les grilles version 1 sont migrées une fois (ajout de la
+ * tuile Films), puis enregistrées en version 2 au prochain changement.
+ */
+const GRID_VERSION = 2;
+
 export function createDefaultGrid() {
   return {
-    version: 1,
+    version: GRID_VERSION,
     items: [
       { ...BUILTIN_APPS.drive },
       { ...BUILTIN_APPS.films },
@@ -237,11 +247,13 @@ function makeId() {
 
 /**
  * Normalise une grille provenant de Firestore, du cache local ou de l'interface.
- * Les applications intégrées sont toujours présentes et ne peuvent pas être
- * supprimées, mais peuvent être réordonnées.
+ * Depuis la version 2, chaque membre compose librement sa grille : toutes les
+ * tuiles peuvent être supprimées. Les grilles version 1 sont migrées une seule
+ * fois (la tuile Films y est ajoutée avant l'enregistrement en version 2).
  */
 export function sanitizeGrid(raw) {
   const source = Array.isArray(raw) ? raw : raw && Array.isArray(raw.items) ? raw.items : [];
+  const isLegacyGrid = Boolean(raw && typeof raw === 'object' && raw.version === 1);
   const seen = new Set();
   const items = [];
   let customCount = 0;
@@ -284,14 +296,18 @@ export function sanitizeGrid(raw) {
     });
   }
 
-  for (const builtin of Object.values(BUILTIN_APPS)) {
-    if (!seen.has(builtin.id)) {
-      items.unshift({ ...builtin });
-      seen.add(builtin.id);
+  // Migration unique : les grilles version 1 découvrent la tuile Films.
+  // Ensuite (version 2), la grille reflète exactement les choix du membre.
+  if (isLegacyGrid) {
+    for (const builtin of Object.values(BUILTIN_APPS)) {
+      if (!seen.has(builtin.id)) {
+        items.unshift({ ...builtin });
+        seen.add(builtin.id);
+      }
     }
   }
 
-  return { version: 1, items };
+  return { version: GRID_VERSION, items };
 }
 
 export function isBuiltinId(id) {

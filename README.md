@@ -6,7 +6,7 @@ Quartz Family est une **PWA statique** en HTML, CSS et JavaScript natif (modules
 
 - **Tableau de bord** — grille de raccourcis personnalisables (ajout, modification, réorganisation par glisser-déposer ou flèches, suppression), synchronisée entre appareils.
 - **Barre latérale** — navigation (Accueil, Drive, Films, Réglages) et raccourcis de l'utilisateur, suivis en temps réel depuis la grille ; remplacée par une barre inférieure sur mobile.
-- **Films** — vidéothèque familiale type Plex : les administrateurs (`adminEmails` dans `config.js`) ajoutent des films avec leur lien Google Drive, une affiche, une année et une description ; les autres membres peuvent suggérer des films que les administrateurs valident ou refusent.
+- **Films** — vidéothèque familiale type Plex : les administrateurs ajoutent des films avec leur lien Google Drive, une affiche, une année et une description ; les autres membres peuvent suggérer des films que les administrateurs valident ou refusent. La liste des administrateurs vit dans Firestore (`config/films-admins`) et se gère depuis l'application (Films → Administrateurs).
 - **Drive** — lien direct vers [Google Drive](https://drive.google.com/) (drive.google.com), ouvert dans un nouvel onglet depuis la barre latérale et la grille d'accueil.
 - **Réglages** — profil Google, thème, état de synchronisation, installation, réinitialisation de la grille, informations et crédits.
 - **Accès restreint** — authentification Google réservée aux comptes `@kesako.org`, côté client **et** via les règles Firestore.
@@ -35,7 +35,7 @@ Quartz Family est une **PWA statique** en HTML, CSS et JavaScript natif (modules
 | --- | --- |
 | Interface | HTML5, CSS3, JavaScript ES6 natif — aucun framework |
 | Authentification | Firebase Authentication, fournisseur Google |
-| Données | Cloud Firestore : `users/{uid}/settings/grid`, collections partagées `films` et `film-suggestions` |
+| Données | Cloud Firestore : `users/{uid}/settings/grid`, collections partagées `films`, `film-suggestions` et `config/films-admins` |
 | Fichiers | Lien direct vers Google Drive (aucun accès aux fichiers) |
 | Hors ligne | Service worker + `localStorage` + cache persistant Firestore |
 | Hébergement | GitHub Pages (site statique) |
@@ -82,14 +82,13 @@ window.QUARTZ_CONFIG = {
     appId: "…"
   },
   allowedDomain: "kesako.org",
-  adminEmails: ["admin@kesako.org"],
   repositoryUrl: "https://github.com/kesako/quartz-family"
 };
 ```
 
 > `config.js` est **ignoré par Git**. Ne le committez jamais : chaque environnement (local, production) génère le sien.
 >
-> `adminEmails` liste les adresses autorisées à gérer le catalogue de films. La même liste doit être reflétée dans la fonction `isFilmAdmin` de [`firestore.rules`](./firestore.rules).
+> Les administrateurs de la vidéothèque Films ne se configurent **pas** ici : leur liste vit dans Firestore (document `config/films-admins`), voir [Règles Firestore](#règles-firestore).
 
 Lancez un serveur statique — l'ouverture directe en `file://` ne fonctionne pas avec les modules ES et le service worker :
 
@@ -128,11 +127,27 @@ Le fichier [`firestore.rules`](./firestore.rules) autorise chaque membre à acc�
 ```text
 users/{uid}                     → profil
 users/{uid}/settings/grid       → grille du tableau de bord
+config/films-admins             → administrateurs de la vidéothèque (lecture : membres, écriture : administrateurs)
 films/{filmId}                  → catalogue de films (lecture : tous les membres, écriture : administrateurs)
 film-suggestions/{id}           → suggestions de films (création : tous, suppression : admin ou auteur)
 ```
 
-La gestion du catalogue de films est réservée aux adresses listées dans la fonction `isFilmAdmin` du fichier de règles — tenez-la en cohérence avec `adminEmails` dans `config.js` et la variable `ADMIN_EMAILS` du déploiement.
+### Administrateurs des films
+
+La liste des administrateurs vit **uniquement dans Firestore** — aucune adresse n'est inscrite dans le code, la configuration déployée ni ce dépôt. Les règles la lisent en direct :
+
+```text
+config/films-admins → { emails: ["pierre.cebrian@kesako.org"] }
+```
+
+**Initialisation (une seule fois, dans la console Firebase)** :
+
+1. **Firestore Database** → **Démarrer une collection** → ID de collection : `config`.
+2. ID du document : `films-admins`.
+3. Champ : `emails` (type **array**) → ajoutez la première adresse, par ex. `pierre.cebrian@kesako.org`.
+4. Ne stockez **que** ce champ `emails` (le reste est écrit par l'application).
+
+Ensuite, tout se gère depuis l'application : **Films → Administrateurs** — un administrateur ajoute ou retire d'autres adresses (`@kesako.org` uniquement). Un administrateur ne peut pas se retirer lui-même de la liste (les règles Firestore l'interdisent aussi), pour éviter tout verrouillage de la vidéothèque.
 
 Déploiement avec la CLI Firebase :
 
@@ -170,7 +185,6 @@ Dans **Settings → Secrets and variables → Actions → Variables**, ajoutez :
 | `FIREBASE_STORAGE_BUCKET` | non | `quartz-family.firebasestorage.app` |
 | `FIREBASE_MESSAGING_SENDER_ID` | non | `846072062010` |
 | `ALLOWED_DOMAIN` | non | `kesako.org` |
-| `ADMIN_EMAILS` | non | `admin@kesako.org` (liste séparée par des virgules) |
 | `REPOSITORY_URL` | non | URL du dépôt affichée dans l'application |
 
 Le workflow génère `config.js` au moment du déploiement. Aucun secret n'est stocké dans le dépôt ; les valeurs Firebase (clé d'API Web, identifiants de projet) sont des identifiants publics, protégés par les règles Firestore et les domaines autorisés.
@@ -236,7 +250,7 @@ Le manifeste déclare le mode `standalone`, les icônes (dont maskable), les rac
 
 - **Domaine** : seules les adresses `@kesako.org` sont acceptées. Un compte hors domaine est déconnecté immédiatement avec un message explicite, et les règles Firestore refusent toute lecture/écriture.
 - **Isolation** : chaque utilisateur n'accède qu'à `users/{son_uid}` et à ses sous-collections.
-- **Films** : le catalogue et les suggestions sont partagés entre membres. Seules les adresses de `adminEmails` (validées aussi par les règles Firestore) peuvent modifier le catalogue ; une suggestion n'est attribuable qu'à son auteur.
+- **Films** : le catalogue et les suggestions sont partagés entre membres. La liste des administrateurs vit dans le document `config/films-admins` (jamais dans le code déployé) ; seules ces adresses peuvent modifier le catalogue, et un administrateur ne peut pas se retirer lui-même. Une suggestion n'est attribuable qu'à son auteur.
 - **Drive** : simple lien externe vers `drive.google.com` — l'application ne demande aucune autorisation Drive et n'accède à aucun fichier.
 - **Secrets** : `config.js` est ignoré par Git et généré à la volée en production. La clé d'API Firebase Web n'est pas un secret serveur ; sa portée est limitée par les règles Firestore et les domaines autorisés.
 - **Données** : aucune donnée n'est revendue ni transmise à des tiers en dehors de Firebase/Google, nécessaires au fonctionnement.
@@ -253,7 +267,7 @@ Pour aller plus loin, vous pouvez restreindre l'écran de consentement OAuth au 
 | « Configuration requise » au démarrage | `config.js` absent ou incomplet. Copiez `config.example.js` et renseignez Firebase. |
 | `auth/unauthorized-domain` | Ajoutez le domaine du site dans Firebase Authentication → Authorized domains. |
 | `permission-denied` dans la console | Les règles Firestore ne sont pas déployées ou l'adresse n'est pas `@kesako.org`. |
-| « Accès refusé » lors d'un ajout de film | Votre adresse n'est pas dans `adminEmails` (config.js) ni dans `isFilmAdmin` (firestore.rules) : les deux listes doivent coïncider. |
+| « Accès refusé » lors d'un ajout de film | Votre adresse n'est pas dans le document Firestore `config/films-admins` (liste des administrateurs). Un administrateur peut vous l'ajouter depuis Films → Administrateurs. |
 | Le lien Drive n'ouvre rien | Vérifiez que votre navigateur autorise les onglets/popups pour ce site, puis ouvrez directement `https://drive.google.com/`. |
 | Ancienne version affichée | Rechargez avec `Ctrl+F5`, ou acceptez la notification de mise à jour. |
 | L'application ne s'installe pas | Vérifiez HTTPS, `manifest.json`, le service worker et utilisez Chrome/Edge. |

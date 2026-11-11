@@ -8,7 +8,7 @@
  * ligne et au rechargement.
  *
  * Collections :
- *  - `films` : catalogue géré par les administrateurs (config.adminEmails) ;
+ *  - `films` : catalogue géré par les administrateurs (voir `config/films-admins`) ;
  *  - `film-suggestions` : suggestions des membres, validées par un administrateur.
  */
 
@@ -16,6 +16,8 @@ import { state, emit } from './store.js';
 import {
   subscribeFilms,
   subscribeFilmSuggestions,
+  subscribeFilmAdmins,
+  saveFilmAdmins,
   createFilm,
   updateFilm as updateFilmInCloud,
   removeFilm as removeFilmFromCloud,
@@ -27,6 +29,7 @@ import {
 let session = 0;
 let unsubFilms = null;
 let unsubSuggestions = null;
+let unsubAdmins = null;
 
 /**
  * Démarre l'écoute du catalogue pour un utilisateur connecté.
@@ -66,11 +69,26 @@ export function startFilmsSync(user) {
       emit('quartz:films-error', { message: friendlyFirestoreError(error) });
     }
   );
+
+  // La liste des administrateurs vit dans Firestore (`config/films-admins`) :
+  // aucune adresse n'est inscrite dans le code ni la configuration déployée.
+  unsubAdmins = subscribeFilmAdmins(
+    (emails) => {
+      if (session !== currentSession) return;
+      state.filmAdmins = emails
+        .map((entry) => (typeof entry === 'string' ? entry.trim().toLowerCase() : ''))
+        .filter(Boolean);
+      emit('quartz:film-admins');
+    },
+    () => {
+      /* silencieux : les erreurs du catalogue sont déjà signalées */
+    }
+  );
 }
 
 export function stopFilmsSync() {
   session += 1;
-  for (const unsubscribe of [unsubFilms, unsubSuggestions]) {
+  for (const unsubscribe of [unsubFilms, unsubSuggestions, unsubAdmins]) {
     if (!unsubscribe) continue;
     try {
       unsubscribe();
@@ -80,10 +98,26 @@ export function stopFilmsSync() {
   }
   unsubFilms = null;
   unsubSuggestions = null;
+  unsubAdmins = null;
   state.films = [];
   state.filmSuggestions = [];
+  state.filmAdmins = [];
   state.filmsLoaded = false;
   state.filmsError = '';
+}
+
+/**
+ * Enregistre la liste des administrateurs des films (réservé aux
+ * administrateurs, contrôlé aussi par les règles Firestore).
+ * @param {Array<string>} emails adresses en minuscules
+ */
+export function updateFilmAdmins(emails) {
+  const clean = [...new Set(
+    emails
+      .map((entry) => (typeof entry === 'string' ? entry.trim().toLowerCase() : ''))
+      .filter(Boolean)
+  )];
+  return saveFilmAdmins(clean);
 }
 
 /** Enregistre un film dans le catalogue partagé (création ou mise à jour). */

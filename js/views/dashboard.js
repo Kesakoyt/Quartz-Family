@@ -181,7 +181,7 @@ export function mountDashboard(root) {
             { class: 'customize-note' },
             icon('drag-and-drop', 15),
             el('span', {
-              text: 'Mode personnalisation : glissez les tuiles ou utilisez les flèches. Les applications intégrées ne peuvent pas être supprimées.',
+              text: "Mode personnalisation : glissez les tuiles ou utilisez les flèches pour réordonner, et supprimez ce que vous n'utilisez pas. La grille par défaut se restaure depuis les Réglages.",
             })
           )
         : null
@@ -287,9 +287,7 @@ export function mountDashboard(root) {
         builtin
           ? null
           : toolButton('edit-shortcut', 'pencil', `Modifier ${name}`, item.id, false),
-        builtin
-          ? null
-          : toolButton('delete-shortcut', 'trash', `Supprimer ${name}`, item.id, false, true),
+        toolButton('delete-shortcut', 'trash', `Supprimer ${name}`, item.id, false, true),
         el(
           'span',
           { class: 'tile-grip', title: 'Glisser pour réordonner', 'aria-hidden': 'true' },
@@ -332,7 +330,7 @@ export function mountDashboard(root) {
 
   function deleteItem(id) {
     const item = findItem(id);
-    if (!item || isBuiltinId(id)) return;
+    if (!item) return;
 
     confirmDialog({
       title: 'Supprimer ce raccourci ?',

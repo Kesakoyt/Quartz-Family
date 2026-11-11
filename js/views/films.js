@@ -1,10 +1,11 @@
 /**
  * Quartz Family — vidéothèque familiale (type Plex) servie depuis Google Drive.
  *
- * Les administrateurs (config.adminEmails) ajoutent, modifient et suppriment
- * les films du catalogue ; chaque film pointe vers un fichier Google Drive
- * ouvert dans un nouvel onglet. Les autres membres peuvent suggérer des films,
- * validées ou refusées par un administrateur.
+ * Les administrateurs (liste Firestore `config/films-admins`, gérable depuis
+ * l'application) ajoutent, modifient et suppriment les films du catalogue ;
+ * chaque film pointe vers un fichier Google Drive ouvert dans un nouvel
+ * onglet. Les autres membres peuvent suggérer des films, validées ou
+ * refusées par un administrateur.
  */
 
 import {
@@ -14,12 +15,14 @@ import {
   sanitizeFilmSuggestion,
   sanitizeFilmYear,
   normalizeHttpUrl,
+  allowedDomain,
 } from '../store.js';
 import {
   saveFilmToCatalog,
   removeFilmFromCatalog,
   submitFilmSuggestion,
   withdrawFilmSuggestion,
+  updateFilmAdmins,
 } from '../films.js';
 import {
   el,
@@ -81,7 +84,7 @@ export function mountFilms(root) {
   const controller = new AbortController();
   const { signal } = controller;
 
-  const isAdmin = isAdminUser(state.user);
+  let isAdmin = false;
   let disposed = false;
   let searchValue = '';
 
@@ -114,6 +117,7 @@ export function mountFilms(root) {
 
   function render() {
     if (disposed) return;
+    isAdmin = isAdminUser(state.user);
     section.replaceChildren(buildHeader(), buildSearch(), librarySlot, suggestionsSlot);
     renderLibrary();
     renderSuggestions();
@@ -150,6 +154,19 @@ export function mountFilms(root) {
           icon('idea', 16, { fallback: 'movie' }),
           el('span', { text: 'Suggérer un film' })
         ),
+        isAdmin
+          ? el(
+              'button',
+              {
+                class: 'btn btn-secondary',
+                type: 'button',
+                dataset: { action: 'manage-admins' },
+                title: 'Gérer les administrateurs de la vidéothèque',
+              },
+              icon('user-male-circle', 16, { fallback: 'settings' }),
+              el('span', { text: 'Administrateurs' })
+            )
+          : null,
         isAdmin
           ? el(
               'button',
@@ -952,6 +969,201 @@ export function mountFilms(root) {
   }
 
   /* ------------------------------------------------------------------------
+     Gestion des administrateurs (administrateurs uniquement)
+     ------------------------------------------------------------------------ */
+
+  function openAdminsDialog() {
+    const self = state.user && state.user.email ? state.user.email.trim().toLowerCase() : '';
+    const listSlot = el('div', { class: 'admin-list' });
+
+    const emailInput = el('input', {
+      class: 'input',
+      id: 'admin-email',
+      name: 'email',
+      type: 'email',
+      maxlength: '80',
+      autocomplete: 'off',
+      spellcheck: 'false',
+      placeholder: 'prenom.nom@kesako.org',
+    });
+
+    const emailError = el('p', { class: 'field-error', role: 'alert' });
+
+    const addButton = el(
+      'button',
+      {
+        class: 'btn btn-primary',
+        type: 'button',
+        on: { click: addAdmin },
+      },
+      icon('plus', 16),
+      el('span', { text: 'Ajouter' })
+    );
+
+    function renderAdminsList() {
+      const admins = [...(state.filmAdmins || [])].sort((a, b) => a.localeCompare(b));
+      if (!admins.length) {
+        listSlot.replaceChildren(
+          el('p', {
+            class: 'field-hint',
+            text: 'Aucun administrateur : la liste vit dans le document Firestore config/films-admins.',
+          })
+        );
+        return;
+      }
+      listSlot.replaceChildren(
+        ...admins.map((email) =>
+          el(
+            'div',
+            { class: 'admin-row' + (email === self ? ' admin-row--self' : '') },
+            icon('user-male-circle', 16, { fallback: 'link' }),
+            el('span', { class: 'admin-email', text: email }),
+            email === self
+              ? el('span', { class: 'admin-self', text: 'Vous' })
+              : el(
+                  'button',
+                  {
+                    class: 'btn btn-secondary btn--sm',
+                    type: 'button',
+                    'aria-label': `Retirer ${email}`,
+                    on: { click: () => removeAdmin(email) },
+                  },
+                  icon('trash', 14),
+                  el('span', { text: 'Retirer' })
+                )
+          )
+        )
+      );
+    }
+
+    function invalid(message) {
+      emailError.textContent = message;
+      emailInput.setAttribute('aria-invalid', 'true');
+      emailInput.focus();
+    }
+
+    async function persist(next, message) {
+      addButton.disabled = true;
+      emailInput.disabled = true;
+      try {
+        await updateFilmAdmins(next);
+        emailInput.value = '';
+        emailError.textContent = '';
+        emailInput.setAttribute('aria-invalid', 'false');
+        toast(message, { type: 'success', title: 'Administrateurs' });
+      } catch (error) {
+        toast(friendlyFilmError(error), { type: 'error', title: 'Administrateurs' });
+      } finally {
+        addButton.disabled = false;
+        emailInput.disabled = false;
+      }
+    }
+
+    function addAdmin() {
+      const email = emailInput.value.trim().toLowerCase();
+      const admins = state.filmAdmins || [];
+
+      emailError.textContent = '';
+      emailInput.setAttribute('aria-invalid', 'false');
+
+      if (!email) {
+        invalid('Donnez une adresse e-mail.');
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        invalid('Adresse e-mail invalide.');
+        return;
+      }
+      if (!email.endsWith('@' + allowedDomain.toLowerCase())) {
+        invalid(`Seules les adresses @${allowedDomain} peuvent administrer les films.`);
+        return;
+      }
+      if (admins.includes(email)) {
+        invalid('Cette adresse est déjà administratrice.');
+        return;
+      }
+      if (admins.length >= 20) {
+        invalid('Limite de 20 administrateurs atteinte.');
+        return;
+      }
+
+      persist([...admins, email], `${email} peut maintenant gérer la vidéothèque.`);
+    }
+
+    function removeAdmin(email) {
+      const admins = state.filmAdmins || [];
+      if (!admins.includes(email)) return;
+      persist(
+        admins.filter((entry) => entry !== email),
+        `${email} n'est plus administrateur.`
+      );
+    }
+
+    const form = el(
+      'form',
+      {
+        class: 'admin-add',
+        novalidate: 'novalidate',
+        on: {
+          submit: (event) => {
+            event.preventDefault();
+            addAdmin();
+          },
+        },
+      },
+      emailInput,
+      addButton
+    );
+
+    const closeButton = el('button', {
+      class: 'btn btn-secondary',
+      type: 'button',
+      text: 'Fermer',
+      on: { click: () => modal.close('close') },
+    });
+
+    const modal = createModal({
+      title: 'Administrateurs des films',
+      subtitle:
+        'Ces membres ajoutent, modifient et suppriment les films, et valident les suggestions. La liste est partagée et protégée par les règles Firestore.',
+      iconName: 'user-male-circle',
+      body: el(
+        'div',
+        {},
+        el('p', {
+          class: 'field-label',
+          text: 'Administrateurs actuels',
+        }),
+        listSlot,
+        el(
+          'div',
+          { class: 'field' },
+          el('label', { class: 'field-label', for: 'admin-email', text: 'Ajouter un administrateur' }),
+          form,
+          emailError,
+          el('p', {
+            class: 'field-hint',
+            text: "Vous ne pouvez pas vous retirer vous-même de la liste ; un autre administrateur le fera pour vous.",
+          })
+        )
+      ),
+      footer: [closeButton],
+    });
+
+    const onAdminsChanged = () => renderAdminsList();
+    window.addEventListener('quartz:film-admins', onAdminsChanged);
+    modal.dialog.addEventListener(
+      'close',
+      () => window.removeEventListener('quartz:film-admins', onAdminsChanged),
+      { once: true }
+    );
+
+    renderAdminsList();
+    modal.dialog.showModal();
+    setTimeout(() => emailInput.focus(), 60);
+  }
+
+  /* ------------------------------------------------------------------------
      Événements
      ------------------------------------------------------------------------ */
 
@@ -970,6 +1182,8 @@ export function mountFilms(root) {
         openFilmForm();
       } else if (action === 'suggest-film') {
         openSuggestionForm();
+      } else if (action === 'manage-admins') {
+        openAdminsDialog();
       } else if (action === 'approve-suggestion' && id) {
         const suggestion = findSuggestion(id);
         if (suggestion) approveSuggestion(suggestion);
@@ -992,6 +1206,14 @@ export function mountFilms(root) {
     'quartz:film-suggestions',
     () => {
       if (!disposed) renderSuggestions();
+    },
+    { signal }
+  );
+
+  window.addEventListener(
+    'quartz:film-admins',
+    () => {
+      if (!disposed) render();
     },
     { signal }
   );

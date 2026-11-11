@@ -62,7 +62,8 @@ export function startGridSync(user) {
       const remote = await loadGridFromCloud(uid);
       if (session !== currentSession) return;
 
-      if (remote && Array.isArray(remote.items) && remote.items.length > 0) {
+      // Grille valide (même vide : le membre a pu tout supprimer volontairement).
+      if (remote && Array.isArray(remote.items)) {
         if (revision === revisionAtStart) {
           const remoteGrid = sanitizeGrid(remote);
           if (!sameGrid(state.grid, remoteGrid)) {

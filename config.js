@@ -8,6 +8,5 @@ window.QUARTZ_CONFIG = {
     appId: "1:846072062010:web:65dd2643f7bc3470459503"
   },
   allowedDomain: "kesako.org",
-  adminEmails: ["admin@kesako.org"],
   repositoryUrl: "https://github.com/kesako/quartz-family"
 };
