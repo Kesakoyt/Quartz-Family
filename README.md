@@ -5,7 +5,8 @@ Le tableau de bord de l'organisation et un accès direct à Google Drive, réuni
 Quartz Family est une **PWA statique** en HTML, CSS et JavaScript natif (modules ES6), sans framework ni étape de build. Elle reprend les codes de **Windows 11 Fluent Design** : effets acryliques, coins arrondis, ombres douces, thèmes clair/sombre/système et transitions fluides.
 
 - **Tableau de bord** — grille de raccourcis personnalisables (ajout, modification, réorganisation par glisser-déposer ou flèches, suppression), synchronisée entre appareils.
-- **Drive** — lien direct vers [Google Drive](https://drive.google.com/) (drive.google.com), ouvert dans un nouvel onglet depuis la barre de navigation et la grille d'accueil.
+- **Barre latérale** — navigation (Accueil, Drive, Réglages) et raccourcis de l'utilisateur, suivis en temps réel depuis la grille ; remplacée par une barre inférieure sur mobile.
+- **Drive** — lien direct vers [Google Drive](https://drive.google.com/) (drive.google.com), ouvert dans un nouvel onglet depuis la barre latérale et la grille d'accueil.
 - **Réglages** — profil Google, thème, état de synchronisation, installation, réinitialisation de la grille, informations et crédits.
 - **Accès restreint** — authentification Google réservée aux comptes `@kesako.org`, côté client **et** via les règles Firestore.
 - **Hors ligne** — service worker, cache applicatif et cache local de la grille ; les modifications sont synchronisées au retour du réseau.
@@ -50,7 +51,7 @@ L'application utilise le routage par hash, compatible avec GitHub Pages sans ré
 | `#/` | Tableau de bord |
 | `#/settings` | Réglages |
 
-Le lien « Drive » de la navigation et de la grille d'accueil pointe directement vers `https://drive.google.com/` (ouverture dans un nouvel onglet, sans vue interne).
+Le lien « Drive » de la barre latérale et de la grille d'accueil pointe directement vers `https://drive.google.com/` (ouverture dans un nouvel onglet, sans vue interne).
 
 ---
 

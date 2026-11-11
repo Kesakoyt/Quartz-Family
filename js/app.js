@@ -4,7 +4,7 @@
  * Responsabilités :
  *  - validation de la configuration et écran d'aide ;
  *  - initialisation Firebase et contrôle strict du domaine ;
- *  - coque de l'application (barre de titre, navigation, menu utilisateur) ;
+ *  - coque de l'application (barre de titre, barre latérale, menu utilisateur) ;
  *  - routage par hash (#/, #/settings) ;
  *  - liens externes de la navigation (Google Drive) ;
  *  - service worker, indicateur hors ligne et mises à jour.
@@ -18,6 +18,7 @@ import {
   isConfigReady,
   isAllowedEmail,
   allowedDomain,
+  isBuiltinId,
   repositoryUrl,
   applyTheme,
   watchSystemTheme,
@@ -314,11 +315,7 @@ function buildShell() {
 
   const user = state.user || {};
 
-  const nav = el(
-    'nav',
-    { class: 'app-nav', 'aria-label': 'Navigation principale' },
-    buildNavLinks(false)
-  );
+  const sidebarParts = buildSidebar();
 
   const syncChip = el(
     'button',
@@ -492,7 +489,6 @@ function buildShell() {
       }),
       el('span', { class: 'brand-name' }, 'Quartz ', el('span', { text: 'Family' }))
     ),
-    nav,
     el('div', { class: 'titlebar-tools' }, syncChip, themeToggle, userMenuWrap)
   );
 
@@ -510,17 +506,19 @@ function buildShell() {
   const mobileNav = el(
     'nav',
     { class: 'mobile-nav', 'aria-label': 'Navigation mobile' },
-    buildNavLinks(true)
+    buildMobileNavLinks()
   );
 
-  const shell = el(
+  const shellBody = el(
     'div',
-    { class: 'app-shell' },
+    { class: 'shell-body' },
     titlebar,
     offlineBanner,
     main,
     mobileNav
   );
+
+  const shell = el('div', { class: 'app-shell' }, sidebarParts.sidebar, shellBody);
 
   app.replaceChildren(shell);
 
@@ -531,7 +529,8 @@ function buildShell() {
     userChip,
     userMenu,
     offlineBanner,
-    nav,
+    sidebar: sidebarParts.sidebar,
+    sidebarShortcuts: sidebarParts.shortcutsSlot,
     mobileNav,
     chipName,
     menuAvatarSlot,
@@ -542,7 +541,11 @@ function buildShell() {
   updateSyncChip();
   updateThemeToggle();
   updateOfflineBanner();
+  renderSidebarShortcuts();
   updateNav(readRoute() || '/');
+
+  // La grille peut arriver après la coque : le panneau latéral suit les mises à jour.
+  window.addEventListener('quartz:grid', renderSidebarShortcuts, { signal });
 
   document.addEventListener(
     'click',
@@ -564,43 +567,123 @@ function buildShell() {
   );
 }
 
-/** Construit les liens de navigation : Accueil, liens externes, puis les autres vues. */
-function buildNavLinks(mobile) {
+/** Construit le panneau latéral : navigation principale + raccourcis de l'utilisateur. */
+function buildSidebar() {
+  const shortcutsSlot = el('div', { class: 'sidebar-shortcuts' });
+
+  const sidebar = el(
+    'aside',
+    { class: 'sidebar' },
+    el(
+      'div',
+      { class: 'sidebar-scroll' },
+      el('nav', { class: 'sidebar-nav', 'aria-label': 'Navigation principale' }, ...buildSidebarLinks()),
+      el(
+        'div',
+        { class: 'sidebar-group' },
+        el('p', { class: 'sidebar-label', text: 'Mes raccourcis' }),
+        shortcutsSlot
+      )
+    )
+  );
+
+  return { sidebar, shortcutsSlot };
+}
+
+/** Liens de la barre latérale : Accueil, liens externes, puis les autres vues. */
+function buildSidebarLinks() {
   const entries = [...ROUTES.entries()];
   const [first, ...rest] = entries;
-  const links = first ? [buildNavLink(first[0], first[1], mobile)] : [];
-  for (const entry of EXTERNAL_LINKS) links.push(buildExternalNavLink(entry, mobile));
-  for (const [path, entry] of rest) links.push(buildNavLink(path, entry, mobile));
+  const links = first ? [buildSidebarRouteLink(first[0], first[1])] : [];
+  for (const entry of EXTERNAL_LINKS) links.push(buildSidebarExternalLink(entry));
+  for (const [path, entry] of rest) links.push(buildSidebarRouteLink(path, entry));
   return links;
 }
 
-function buildNavLink(path, entry, mobile) {
-  const node = el(
-    'a',
-    {
-      class: mobile ? 'mobile-nav-link' : 'nav-link',
-      href: '#' + path,
-      dataset: { route: path },
-    },
-    icon(entry.iconName, mobile ? 21 : 17, { fallback: 'link' }),
-    el('span', { text: entry.label })
-  );
-  return node;
-}
-
-function buildExternalNavLink(entry, mobile) {
+function sidebarLink(label, iconName, extra) {
   return el(
     'a',
-    {
-      class: mobile ? 'mobile-nav-link' : 'nav-link',
-      href: entry.url,
-      target: '_blank',
-      rel: 'noopener noreferrer',
-      title: entry.title || entry.label,
-    },
-    icon(entry.iconName, mobile ? 21 : 17, { fallback: 'link' }),
-    el('span', { text: entry.label })
+    { class: 'sidebar-link', ...extra },
+    icon(iconName, 18, { fallback: 'link' }),
+    el('span', { class: 'sidebar-link-text', text: label })
   );
+}
+
+function buildSidebarRouteLink(path, entry) {
+  return sidebarLink(entry.label, entry.iconName, {
+    href: '#' + path,
+    dataset: { route: path },
+  });
+}
+
+function buildSidebarExternalLink(entry) {
+  return sidebarLink(entry.label, entry.iconName, {
+    href: entry.url,
+    target: '_blank',
+    rel: 'noopener noreferrer',
+    title: entry.title || entry.label,
+  });
+}
+
+/** Raccourcis utilisateur (grille de l'accueil) affichés dans le panneau latéral. */
+function renderSidebarShortcuts() {
+  if (!shellNodes || !shellNodes.sidebarShortcuts) return;
+  const items = ((state.grid && state.grid.items) || []).filter(
+    (item) => item && item.type === 'link' && !isBuiltinId(item.id)
+  );
+
+  if (!items.length) {
+    shellNodes.sidebarShortcuts.replaceChildren(
+      el('p', { class: 'sidebar-empty', text: "Aucun raccourci. Ajoutez-en depuis l'accueil." })
+    );
+    return;
+  }
+
+  shellNodes.sidebarShortcuts.replaceChildren(
+    ...items.map((item) =>
+      sidebarLink(item.title || item.url || 'Raccourci', item.icon, {
+        href: item.url,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        title: item.title || item.url || '',
+      })
+    )
+  );
+}
+
+/** Liens de la barre de navigation mobile : Accueil, liens externes, puis les autres vues. */
+function buildMobileNavLinks() {
+  const entries = [...ROUTES.entries()];
+  const [first, ...rest] = entries;
+  const links = first ? [buildMobileRouteLink(first[0], first[1])] : [];
+  for (const entry of EXTERNAL_LINKS) links.push(buildMobileExternalLink(entry));
+  for (const [path, entry] of rest) links.push(buildMobileRouteLink(path, entry));
+  return links;
+}
+
+function mobileLink(label, iconName, extra) {
+  return el(
+    'a',
+    { class: 'mobile-nav-link', ...extra },
+    icon(iconName, 21, { fallback: 'link' }),
+    el('span', { class: 'mobile-nav-label', text: label })
+  );
+}
+
+function buildMobileRouteLink(path, entry) {
+  return mobileLink(entry.label, entry.iconName, {
+    href: '#' + path,
+    dataset: { route: path },
+  });
+}
+
+function buildMobileExternalLink(entry) {
+  return mobileLink(entry.label, entry.iconName, {
+    href: entry.url,
+    target: '_blank',
+    rel: 'noopener noreferrer',
+    title: entry.title || entry.label,
+  });
 }
 
 function updateUserChrome() {
@@ -731,13 +814,13 @@ function renderRoute(force = false) {
 
 function updateNav(route) {
   if (!shellNodes) return;
-  for (const link of shellNodes.nav.querySelectorAll('[data-route]')) {
-    if (link.dataset.route === route) link.setAttribute('aria-current', 'page');
-    else link.removeAttribute('aria-current');
-  }
-  for (const link of shellNodes.mobileNav.querySelectorAll('[data-route]')) {
-    if (link.dataset.route === route) link.setAttribute('aria-current', 'page');
-    else link.removeAttribute('aria-current');
+  const containers = [shellNodes.sidebar, shellNodes.mobileNav];
+  for (const container of containers) {
+    if (!container) continue;
+    for (const link of container.querySelectorAll('[data-route]')) {
+      if (link.dataset.route === route) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    }
   }
 }
 

@@ -9,7 +9,7 @@
  *  - les services tiers (Firebase) ne sont jamais interceptés.
  */
 
-const VERSION = '1.0.4';
+const VERSION = '1.0.5';
 const CORE_CACHE = `quartz-core-v${VERSION}`;
 const ICON_CACHE = `quartz-icons-v${VERSION}`;
 const KEEP_CACHES = new Set([CORE_CACHE, ICON_CACHE]);
